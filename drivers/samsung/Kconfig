@@ -24,6 +24,13 @@ menuconfig VIBETONZ
 	help
 	  Say Y to enable Vibetonz support.
 
+menuconfig J4FS
+	tristate "Samsung J4FS support"
+	depends on SAMSUNG_MODULES
+	default m
+	help
+	  Say Y to enable Samsung J4FS support.
+
 menuconfig STORAGE
 	tristate "Storage"
 	depends on SAMSUNG_MODULES && SAMSUNG_PHONE_SVNET
