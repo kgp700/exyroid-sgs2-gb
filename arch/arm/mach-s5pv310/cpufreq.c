@@ -1159,12 +1159,36 @@ void s5pv310_set_frequency(unsigned int old_index, unsigned int new_index)
 	}
 }
 
+unsigned int target_freq_smooth;
+
+static void do_smooth_freq(struct work_struct *work)
+{
+	unsigned int target_freq;
+
+	mutex_lock(&set_cpu_freq_change);
+	target_freq = target_freq_smooth;
+	mutex_unlock(&set_cpu_freq_change);
+
+	if (likely(target_freq)) {
+		struct cpufreq_policy *policy = cpufreq_cpu_get(0);
+		int ret;
+
+		printk(KERN_INFO "%s: cpu%d: freq set to %u\n",
+			__func__, policy->cpu, target_freq_smooth);
+		ret = cpufreq_driver_target(policy,
+				target_freq_smooth, CPUFREQ_RELATION_H);
+		WARN_ON(ret < 0);
+	}
+}
+
+static DECLARE_DELAYED_WORK(smooth_freq_work, do_smooth_freq);
+
 static int s5pv310_target(struct cpufreq_policy *policy,
 		unsigned int target_freq,
 		unsigned int relation)
 {
 	int ret = 0;
-	unsigned int index, old_index;
+	unsigned int index, old_index, target_index;
 	unsigned int arm_volt;
 #ifndef CONFIG_S5PV310_BUSFREQ
 	unsigned int int_volt;
@@ -1184,25 +1208,21 @@ static int s5pv310_target(struct cpufreq_policy *policy,
 				__FILE__, __LINE__);
 	}
 
-	if (!strncmp(policy->governor->name, "ondemand", CPUFREQ_NAME_LEN)
-	|| !strncmp(policy->governor->name, "conservative", CPUFREQ_NAME_LEN)) {
-		check_gov = 1;
-		if (relation & ENABLE_FURTHER_CPUFREQ)
-			s5pv310_dvs_locking = 0;
+	/*
+	 * If we're going to suspend disable further cpu frequency changes
+	 * (800MHz sleep death fix).
+	 */
+	check_gov = 1;
+	if (relation & ENABLE_FURTHER_CPUFREQ)
+		s5pv310_dvs_locking = 0;
 
-		if (s5pv310_dvs_locking == 1)
-			goto cpufreq_out;
+	if (s5pv310_dvs_locking == 1)
+		goto cpufreq_out;
 
-		if (relation & DISABLE_FURTHER_CPUFREQ)
-			s5pv310_dvs_locking = 1;
+	if (relation & DISABLE_FURTHER_CPUFREQ)
+		s5pv310_dvs_locking = 1;
 
-		relation &= ~(MASK_FURTHER_CPUFREQ | MASK_ONLY_SET_CPUFREQ);
-	} else {
-		if ((relation & ENABLE_FURTHER_CPUFREQ) ||
-			(relation & DISABLE_FURTHER_CPUFREQ) ||
-			(relation & MASK_ONLY_SET_CPUFREQ))
-			goto cpufreq_out;
-	}
+	relation &= ~(MASK_FURTHER_CPUFREQ | MASK_ONLY_SET_CPUFREQ);
 
 	freqs.old = s5pv310_getspeed(policy->cpu);
 
@@ -1223,6 +1243,8 @@ static int s5pv310_target(struct cpufreq_policy *policy,
 
 	if ((index < g_cpufreq_limit_level) && check_gov)
 		index = g_cpufreq_limit_level;
+
+	target_index = index;
 
 	if (s5pv310_max_armclk == ARMCLOCK_1200MHZ) {
 #ifdef CONFIG_FREQ_STEP_UP_L2_L0
@@ -1254,6 +1276,11 @@ static int s5pv310_target(struct cpufreq_policy *policy,
 
 	freqs.new = s5pv310_freq_table[index].frequency;
 	freqs.cpu = policy->cpu;
+
+	if (index != target_index) {
+		target_freq_smooth = target_freq;
+		schedule_delayed_work_on(0, &smooth_freq_work, HZ >> 1);
+	}
 
 	/* If the new frequency is same with previous frequency, skip */
 	if (freqs.new == freqs.old)
@@ -1760,31 +1787,48 @@ static int s5pv310_cpufreq_resume(struct cpufreq_policy *policy)
 static int s5pv310_cpufreq_notifier_event(struct notifier_block *this,
 		unsigned long event, void *ptr)
 {
-	unsigned int cpu = 0;
-	int ret = 0;
+	static int max, min;
+	struct cpufreq_policy *policy = cpufreq_cpu_get(0);
+	int ret;
 
 	switch (event) {
 	case PM_SUSPEND_PREPARE:
-		ret = cpufreq_driver_target(cpufreq_cpu_get(cpu),
-		s5pv310_freq_table[L1].frequency, DISABLE_FURTHER_CPUFREQ);
-		if (WARN_ON(ret < 0))
-			return NOTIFY_BAD;
+		max = policy->max;
+		min = policy->min;
+		policy->max = policy->min = s5pv310_freq_table[L3].frequency;
+		ret = cpufreq_driver_target(policy,
+				s5pv310_freq_table[L3].frequency,
+				DISABLE_FURTHER_CPUFREQ);
+		if (WARN_ON(ret < 0)) {
+			ret = NOTIFY_BAD;
+			goto out;
+		}
 #ifdef CONFIG_S5PV310_BUSFREQ
 		s5pv310_busfreq_lock(DVFS_LOCK_ID_PM, BUS_L0);
 #endif
 		printk(KERN_DEBUG "PM_SUSPEND_PREPARE for CPUFREQ\n");
-		return NOTIFY_OK;
+		ret = NOTIFY_OK;
+		break;
 	case PM_POST_RESTORE:
 	case PM_POST_SUSPEND:
 		printk(KERN_DEBUG "PM_POST_SUSPEND for CPUFREQ: %d\n", ret);
-		ret = cpufreq_driver_target(cpufreq_cpu_get(cpu),
-		s5pv310_freq_table[L1].frequency, ENABLE_FURTHER_CPUFREQ);
+		ret = cpufreq_driver_target(policy,
+				s5pv310_freq_table[L3].frequency,
+				ENABLE_FURTHER_CPUFREQ);
+		policy->max = max;
+		policy->min = min;
 #ifdef CONFIG_S5PV310_BUSFREQ
 		s5pv310_busfreq_lock_free(DVFS_LOCK_ID_PM);
 #endif
-		return NOTIFY_OK;
+		ret = NOTIFY_OK;
+		break;
+	default:
+		ret = NOTIFY_DONE;
+		break;
 	}
-	return NOTIFY_DONE;
+out:
+	cpufreq_cpu_put(policy);
+	return ret;
 }
 
 static struct notifier_block s5pv310_cpufreq_notifier = {
