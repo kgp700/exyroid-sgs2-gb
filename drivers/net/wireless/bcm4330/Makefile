@@ -5,6 +5,8 @@ EXTRA_CFLAGS += -Dlinux -DLINUX -DBDC -DBCMDRIVER -DBCMDONGLEHOST -DDHDTHREAD \
 ################ OPTIONAL FEATURES ############################################################
 #TO ENALBLE OPTIONAL FEATURES UNCOMMENT THE CORRESPONDING FLAGS
 
+subdir-ccflags-y += -Os
+
 # For Samsung Aries only.
 EXTRA_CFLAGS += -DCUSTOMER_HW_SAMSUNG
 EXTRA_CFLAGS += -DSYSLSI_SPECIFIC
