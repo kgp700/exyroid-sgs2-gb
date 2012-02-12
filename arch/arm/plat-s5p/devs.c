@@ -1090,8 +1090,6 @@ static struct android_usb_product usb_products[] = {
 		.bDeviceProtocol= 0x01,
 		.s		= ANDROID_KIES_CONFIG_STRING,
 		.mode		= USBSTATUS_SAMSUNG_KIES,
-		.multi_conf_functions[0] = usb_functions_mtp,
-		.multi_conf_functions[1] = usb_functions_mtp_acm,
 	},
 	{
 		.product_id	= SAMSUNG_UMS_PRODUCT_ID,
@@ -1244,7 +1242,7 @@ EXPORT_SYMBOL(s3c_device_android_usb);
 static struct usb_mass_storage_platform_data ums_pdata = {
 #ifdef CONFIG_TARGET_LOCALE_KOR
 	.vendor			= "SAMSUNG",
-	.product		= "SHW-M250S",
+	.product		= "SHW-M250K",
 #else
 	.vendor			= "Android   ",//"Samsung",
 	.product		= "UMS Composite",//"SMDKV210",

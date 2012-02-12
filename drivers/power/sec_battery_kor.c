@@ -60,7 +60,7 @@
 /* all count duration = (count - 1) * poll interval */
 #define RE_CHG_COND_COUNT		4
 #define RE_CHG_MIN_COUNT		2
-#define TEMP_BLOCK_COUNT		2
+#define TEMP_BLOCK_COUNT		3
 #define BAT_DET_COUNT			2
 #define FULL_CHG_COND_COUNT 	2
 #define OVP_COND_COUNT			2
@@ -68,6 +68,18 @@
 #define USB_FULL_COND_VOLTAGE    4180000
 #define FULL_CHARGE_COND_VOLTAGE    4100000
 #define INIT_CHECK_COUNT	4
+#define CALL_EXCEPTION_VOLTAGE_UP    3400000
+#define CALL_EXCEPTION_VOLTAGE_DN    3200000
+
+extern int get_proximity_activation_state(void);
+extern int get_proximity_approach_state(void);
+
+enum tmu_status_t {
+	TMU_STATUS_NORMAL = 0,
+	TMU_STATUS_TRIPPED,
+	TMU_STATUS_THROTTLED,
+	TMU_STATUS_WARNING,
+};
 
 enum cable_type_t {
 	CABLE_TYPE_NONE = 0,
@@ -171,6 +183,9 @@ struct sec_bat_info {
 	unsigned int recharging_status;
 	unsigned int batt_lpm_state;
 	unsigned int sub_chg_status;
+	unsigned int voice_call_state;
+	unsigned int is_call_except;
+	unsigned int charging_set_current;
 
 	struct mutex adclock;
 
@@ -180,6 +195,8 @@ struct sec_bat_info {
 	bool sub_chg_ovp;
 	int initial_check_count;
 	struct proc_dir_entry *entry;
+
+	int batt_tmu_status;
 };
 
 static char *supply_list[] = {
@@ -219,8 +236,8 @@ static int calculate_average_adc(struct sec_bat_info *info,
 		for (i = 0; i < ADC_TOTAL_COUNT; i++)
 			sample->adc_arr[i] = adc;
 	} else {
-		sample->index = ++index >= ADC_TOTAL_COUNT ? 0 : index;
-		sample->adc_arr[index] = adc;
+		sample->index = (++index >= ADC_TOTAL_COUNT) ? 0 : index;
+		sample->adc_arr[sample->index] = adc;
 		for (i = 0; i < ADC_TOTAL_COUNT; i++)
 			total_adc += sample->adc_arr[i];
 
@@ -228,7 +245,7 @@ static int calculate_average_adc(struct sec_bat_info *info,
 	}
 
 	sample->average_adc = average_adc;
-	dev_dbg(info->dev, "%s: i(%d) adc=%d, avg_adc=%d\n", __func__,
+	dev_info(info->dev, "%s: i(%d) adc=%d, avg_adc=%d\n", __func__,
 		sample->index, adc, average_adc);
 
 	return average_adc;
@@ -242,12 +259,26 @@ static int sec_bat_check_vf(struct sec_bat_info *info)
 	if (info->present == 0) {
 		if (info->test_info.test_value == 999) {
 			printk("%s : test case : %d\n", __func__, info->test_info.test_value);
-			health = POWER_SUPPLY_HEALTH_UNSPEC_FAILURE;
+			health = POWER_SUPPLY_HEALTH_UNKNOWN;
 		} else
 			health = POWER_SUPPLY_HEALTH_DEAD;
+	} else {
+		health = POWER_SUPPLY_HEALTH_GOOD;
 	}
 
-	info->batt_health = health;
+	/* update health */
+	if (health != info->batt_health) {
+		if (health == POWER_SUPPLY_HEALTH_UNKNOWN ||
+			health == POWER_SUPPLY_HEALTH_DEAD){
+			info->batt_health = health;
+			printk("%s : vf error update\n", __func__);
+		} else if (info->batt_health != POWER_SUPPLY_HEALTH_OVERHEAT &&
+			info->batt_health != POWER_SUPPLY_HEALTH_COLD &&
+			health == POWER_SUPPLY_HEALTH_GOOD) {
+			info->batt_health = health;
+			printk("%s : recovery form vf error\n", __func__);
+		}
+	}
 	
 	return 0;
 }
@@ -415,6 +446,8 @@ static int sec_bat_handle_sub_charger_topoff(struct sec_bat_info *info)
 		info->charging_status = POWER_SUPPLY_STATUS_FULL;
 		info->batt_full_status = BATT_FULL;
 		info->recharging_status = false;
+		info->charging_passed_time = 0;
+		info->charging_start_time = 0;
 		/* disable charging */
 		value.intval = POWER_SUPPLY_STATUS_DISCHARGING;
 		ret = psy_sub->set_property(psy_sub, POWER_SUPPLY_PROP_STATUS,
@@ -507,10 +540,22 @@ static int sec_bat_set_property(struct power_supply *ps,
 		/* TODO : fix delay time */
 		queue_delayed_work(info->monitor_wqueue, &info->cable_work, 0);
 		break;
+	case POWER_SUPPLY_PROP_HEALTH:
+		/* call by TMU driver
+		 * alarm for abnormal temperature increasement
+		 */
+		info->batt_tmu_status = val->intval;
+
+		wake_lock(&info->monitor_wake_lock);
+		queue_work(info->monitor_wqueue, &info->monitor_work);
+
+		dev_info(info->dev, "%s: TMU status has been changed(%d)\n",
+			__func__, info->batt_tmu_status);
+
+		break;
 	default:
 		return -EINVAL;
 	}
-
 	return 0;
 }
 
@@ -742,7 +787,7 @@ static int sec_bat_check_temper_adc(struct sec_bat_info *info)
 		health = POWER_SUPPLY_HEALTH_GOOD;
 
 skip_hupdate:
-	if (info->batt_health != POWER_SUPPLY_HEALTH_UNSPEC_FAILURE &&
+	if (info->batt_health != POWER_SUPPLY_HEALTH_UNKNOWN &&
 		info->batt_health != POWER_SUPPLY_HEALTH_DEAD &&
 		health != info->batt_health) {
 		info->batt_health = health;
@@ -1034,6 +1079,7 @@ static int sec_bat_enable_charging_main(struct sec_bat_info *info, bool enable)
 	} else {		/* Disable charging */
 		val_type.intval = POWER_SUPPLY_STATUS_DISCHARGING;
 		info->charging_passed_time = 0;
+		info->charging_start_time = 0;
 	}
 
 	ret = psy->set_property(psy, POWER_SUPPLY_PROP_STATUS, &val_type);
@@ -1092,6 +1138,8 @@ static int sec_bat_enable_charging_sub(struct sec_bat_info *info, bool enable)
 			return -EINVAL;
 		}
 
+		info->charging_set_current = val_chg_current.intval;
+
 		/* Set charging current */
 		ret = psy_sub->set_property(psy_sub,
 					    POWER_SUPPLY_PROP_CURRENT_NOW,
@@ -1116,6 +1164,8 @@ static int sec_bat_enable_charging_sub(struct sec_bat_info *info, bool enable)
 		}
 		info->next_check_time = 0;
 		info->charging_passed_time = 0;
+		info->charging_set_current = 0;
+		info->charging_start_time = 0;
 	}
 
 	ret = psy_sub->set_property(psy_sub, POWER_SUPPLY_PROP_STATUS,
@@ -1283,7 +1333,7 @@ static int sec_bat_check_vf(struct sec_bat_info *info)
 		//if (info->jig_status || (info->test_info.test_value == 999)) TODO
 		if (info->test_info.test_value == 999) {
 			printk("%s : test case : %d\n", __func__, info->test_info.test_value);
-			health = POWER_SUPPLY_HEALTH_UNSPEC_FAILURE;
+			health = POWER_SUPPLY_HEALTH_UNKNOWN;
 		} else
 			health = POWER_SUPPLY_HEALTH_DEAD;
 		info->present = 0;
@@ -1352,19 +1402,17 @@ static void sec_bat_check_ing_level_trigger(struct sec_bat_info *info)
 					info->next_check_time)) {
 				info->next_check_time =
 					info->charging_passed_time + RESETTING_CHG_TIME;
+				if (info->is_call_except) {
+					printk("%s : call exception case, skip resetting\n", __func__);
+					full_cnt = 0;
+					ovp_cnt = 0;
+					break;
+				}
+
 				if (info->cable_type == CABLE_TYPE_AC) {
 					val_type.intval = POWER_SUPPLY_STATUS_CHARGING;
 					val_chg_current.intval = 650;	/* mA */
-				} else if (info->cable_type == CABLE_TYPE_USB ||
-					info->cable_type == CABLE_TYPE_MISC) {
-					val_type.intval = POWER_SUPPLY_STATUS_CHARGING;
-					val_chg_current.intval = 450;	/* mA */
-				} else {
-					val_chg_current.intval = 0;
-					dev_err(info->dev, "%s: Invalid charging case\n", __func__);
-				}
-
-				if (val_type.intval == POWER_SUPPLY_STATUS_CHARGING) {
+					
 					ret = psy_sub->set_property(psy_sub,
 								    POWER_SUPPLY_PROP_CURRENT_NOW,
 								    &val_chg_current);
@@ -1457,6 +1505,151 @@ static int sec_main_charger_default(struct sec_bat_info *info)
 	return 0;
 }
 
+static void sec_batt_check_call_exception_test(struct sec_bat_info *info)
+{
+	struct power_supply *psy_sub =
+	    power_supply_get_by_name(info->sub_charger_name);
+	union power_supply_propval val_type, val_chg_current;
+	int proximity_activation = 0;
+	int proximity_approach = 0;
+	int ret;
+
+	if (info->cable_type != CABLE_TYPE_AC) {
+		info->is_call_except = 0;
+		return;
+	}
+
+	if (!info->charging_enabled) {
+		if (info->is_call_except)
+			info->is_call_except = 0;
+		return;
+	}
+	
+	if (!info->is_call_except) {
+		info->is_call_except = 1;
+	} else {
+		info->is_call_except = 0;
+	}
+
+	val_type.intval = POWER_SUPPLY_STATUS_UNKNOWN;
+
+	if (info->charging_set_current == 650 &&
+		info->is_call_except == 1) {
+		val_type.intval = POWER_SUPPLY_STATUS_CHARGING;
+		val_chg_current.intval = 450;
+		info->charging_set_current = val_chg_current.intval;
+		printk("%s : call exception enable!\n", __func__);
+	} else if (info->charging_set_current == 450 &&
+		info->is_call_except == 0) {
+		val_type.intval = POWER_SUPPLY_STATUS_CHARGING;
+		val_chg_current.intval = 650;
+		info->charging_set_current = val_chg_current.intval;
+		printk("%s : call exception disable!\n", __func__);
+	}
+
+	if (val_type.intval == POWER_SUPPLY_STATUS_CHARGING) {
+		ret = psy_sub->set_property(psy_sub,
+					    POWER_SUPPLY_PROP_CURRENT_NOW,
+					    &val_chg_current);
+		if (ret) {
+			dev_err(info->dev, "%s: fail to set charging cur(%d)\n",
+				__func__, ret);
+		}
+
+		ret = psy_sub->set_property(psy_sub,
+						POWER_SUPPLY_PROP_STATUS,
+					    &val_type);
+		if (ret) {
+			dev_err(info->dev, "%s: fail to set charging status(%d)\n",
+				__func__, ret);
+		}
+		
+		dev_info(info->dev, "%s: reset charging current\n",
+			 __func__);
+	}
+}
+
+static void sec_batt_check_call_exception(struct sec_bat_info *info)
+{
+	struct power_supply *psy_sub =
+	    power_supply_get_by_name(info->sub_charger_name);
+	union power_supply_propval val_type, val_chg_current;
+	int proximity_activation = 0;
+	int proximity_approach = 0;
+	int ret;
+
+	if (info->cable_type != CABLE_TYPE_AC) {
+		info->is_call_except = 0;
+		return;
+	}
+
+	if (!info->charging_enabled) {
+		if (info->is_call_except)
+			info->is_call_except = 0;
+		return;
+	}
+	
+	proximity_activation = get_proximity_activation_state();
+	proximity_approach = get_proximity_approach_state();
+	
+	if (info->voice_call_state &&
+		proximity_activation &&
+		proximity_approach) {
+		//info->is_call_except = 1;
+		info->batt_vcell = sec_bat_get_fuelgauge_data(info, FG_T_VCELL);
+		if (info->batt_vcell >= CALL_EXCEPTION_VOLTAGE_DN &&
+			info->batt_vcell < CALL_EXCEPTION_VOLTAGE_UP &&
+			info->is_call_except == 0) {
+			info->is_call_except = 0;
+		} else 	if (info->batt_vcell < CALL_EXCEPTION_VOLTAGE_DN) {
+			info->is_call_except = 0;
+		} else {
+			info->is_call_except = 1;
+		}
+	} else {
+		info->is_call_except = 0;
+	}
+
+	val_type.intval = POWER_SUPPLY_STATUS_UNKNOWN;
+
+	if (info->charging_set_current == 650 &&
+		info->is_call_except == 1) {
+		val_type.intval = POWER_SUPPLY_STATUS_CHARGING;
+		val_chg_current.intval = 450;
+		info->charging_set_current = val_chg_current.intval;
+		printk("%s : call exception enable! (%d, %d, %d)\n", __func__,
+			info->voice_call_state, proximity_activation, proximity_approach);
+	} else if (info->charging_set_current == 450 &&
+		info->is_call_except == 0) {
+		val_type.intval = POWER_SUPPLY_STATUS_CHARGING;
+		val_chg_current.intval = 650;
+		info->charging_set_current = val_chg_current.intval;
+		printk("%s : call exception disable! (%d, %d, %d)\n", __func__,
+			info->voice_call_state, proximity_activation, proximity_approach);
+	}
+
+	if (val_type.intval == POWER_SUPPLY_STATUS_CHARGING) {
+		ret = psy_sub->set_property(psy_sub,
+					    POWER_SUPPLY_PROP_CURRENT_NOW,
+					    &val_chg_current);
+		if (ret) {
+			dev_err(info->dev, "%s: fail to set charging cur(%d)\n",
+				__func__, ret);
+		}
+
+		ret = psy_sub->set_property(psy_sub,
+						POWER_SUPPLY_PROP_STATUS,
+					    &val_type);
+		if (ret) {
+			dev_err(info->dev, "%s: fail to set charging status(%d)\n",
+				__func__, ret);
+		}
+		
+		dev_info(info->dev, "%s: reset charging current\n",
+			 __func__);
+	}
+}
+
 static void sec_bat_monitor_work(struct work_struct *work)
 {
 	struct sec_bat_info *info = container_of(work, struct sec_bat_info,
@@ -1480,6 +1673,9 @@ static void sec_bat_monitor_work(struct work_struct *work)
 			sec_bat_handle_sub_charger_topoff(info);
 		}*/
 	}
+
+	if (info->test_info.test_value == 6)
+		info->batt_tmu_status = TMU_STATUS_WARNING;
 
 	switch (info->charging_status) {
 	case POWER_SUPPLY_STATUS_FULL:
@@ -1566,8 +1762,13 @@ static void sec_bat_measure_work(struct work_struct *work)
 
 	wake_lock(&info->measure_wake_lock);
 	sec_bat_check_temper_adc(info);
-	if (sec_bat_check_detbat(info) == BAT_NOT_DETECTED && info->present == 1)
+	if (sec_bat_check_detbat(info) == BAT_NOT_DETECTED && info->present == 1) {
+		msleep(100);
 		sec_bat_check_detbat(info); /* AGAIN_FEATURE */
+	}
+	/* TBD */
+	//sec_batt_check_call_exception(info);
+	//sec_batt_check_call_exception_test(info); /* for test */
 
 	if (info->initial_check_count) {
 		queue_delayed_work(info->monitor_wqueue, &info->measure_work,
@@ -1615,6 +1816,9 @@ static struct device_attribute sec_battery_attrs[] = {
 	SEC_BATTERY_ATTR(batt_lpm_state),
 	SEC_BATTERY_ATTR(sub_chg_state),
 	SEC_BATTERY_ATTR(lpm_reboot_event),
+	SEC_BATTERY_ATTR(talk_wcdma),
+	SEC_BATTERY_ATTR(talk_gsm),
+	SEC_BATTERY_ATTR(batt_tmu_status),
 };
 
 enum {
@@ -1642,6 +1846,9 @@ enum {
 	BATT_LPM_STATE,
 	BATT_SUB_CHG_STATE,
 	LPM_REBOOT_EVENT,
+	BATT_WCDMA_CALL,
+	BATT_GSM_CALL,
+	BATT_TMU_STATUS,
 };
 
 static ssize_t sec_bat_show_property(struct device *dev,
@@ -1743,6 +1950,10 @@ static ssize_t sec_bat_show_property(struct device *dev,
 		i += scnprintf(buf + i, PAGE_SIZE - i, "%d\n",
 			info->sub_chg_status);
 		break;
+	case BATT_TMU_STATUS:
+		i += scnprintf(buf + i, PAGE_SIZE - i, "%d\n",
+			info->batt_tmu_status);
+		break;
 	default:
 		i = -EINVAL;
 	}
@@ -1814,7 +2025,9 @@ static ssize_t sec_bat_store(struct device *dev,
 					wake_lock(&info->monitor_wake_lock);
 					queue_work(info->monitor_wqueue, &info->monitor_work);
 				}
-			} else
+			} else if (x == 6)
+				info->test_info.test_value = 6; // for tmu test
+			else
 				info->test_info.test_value = 0;
 			printk("%s : test case : %d\n", __func__,
 						info->test_info.test_value);
@@ -1836,6 +2049,14 @@ static ssize_t sec_bat_store(struct device *dev,
 				sec_main_charger_default(info);
 			}
 			ret = count;
+		}
+		break;
+	case BATT_WCDMA_CALL:
+	case BATT_GSM_CALL:
+		if (sscanf(buf, "%d\n", &x) == 1) {
+			info->voice_call_state = x;
+			printk("%s : voice call = %d, %d\n", __func__,
+				x, info->voice_call_state);
 		}
 		break;
 	default:
@@ -1896,7 +2117,7 @@ static int sec_bat_read_proc(char *buf, char **start,
 	cur_time = ktime_to_timespec(ktime);
 
 	len = sprintf(buf, "%lu, %u, %u, %u, %u, %u, %d, %d, %d, \
-%d, %d, %u, %u, %u, %u, %u, %u, %d, %lu\n",
+%d, %d, %u, %u, %u, %u, %u, %u, %d, %d, %lu\n",
             cur_time.tv_sec,
             info->batt_raw_soc,
             info->batt_soc,
@@ -1915,6 +2136,7 @@ static int sec_bat_read_proc(char *buf, char **start,
             info->charging_status,
             info->present,
             info->cable_type,
+            info->batt_tmu_status,
             info->charging_passed_time);
     return len;
 }
@@ -1999,6 +2221,7 @@ static __devinit int sec_bat_probe(struct platform_device *pdev)
 
 	info->padc = s3c_adc_register(pdev, NULL, NULL, 0);
 	info->charging_start_time = 0;
+	info->is_call_except = 0;
 
 	if (info->get_lpcharging_state) {
 		if (info->get_lpcharging_state())
@@ -2006,6 +2229,8 @@ static __devinit int sec_bat_probe(struct platform_device *pdev)
 		else
 			info->polling_interval = POLLING_INTERVAL;
 	}
+
+	info->batt_tmu_status = TMU_STATUS_NORMAL;
 
 	if (info->charging_status == POWER_SUPPLY_STATUS_CHARGING)
 		info->measure_interval = MEASURE_CHG_INTERVAL;

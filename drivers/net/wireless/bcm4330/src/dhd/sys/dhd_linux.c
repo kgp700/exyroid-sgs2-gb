@@ -577,12 +577,12 @@ static int dhd_sleep_pm_callback(struct notifier_block *nfb, unsigned long actio
 		case PM_HIBERNATION_PREPARE:
 		case PM_SUSPEND_PREPARE:
 			dhd_mmc_suspend = TRUE;
-			ret = NOTIFY_OK;
+		ret = NOTIFY_OK;
 		break;
 		case PM_POST_HIBERNATION:
 		case PM_POST_SUSPEND:
 			dhd_mmc_suspend = FALSE;
-			ret = NOTIFY_OK;
+		ret = NOTIFY_OK;
 		break;
 	}
 	smp_mb();
@@ -597,7 +597,7 @@ extern int register_pm_notifier(struct notifier_block *nb);
 extern int unregister_pm_notifier(struct notifier_block *nb);
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 27)) && defined(CONFIG_PM_SLEEP) */
 	/* && defined(DHD_GPL) */
-void dhd_set_packet_filter(int value, dhd_pub_t *dhd)
+static void dhd_set_packet_filter(int value, dhd_pub_t *dhd)
 {
 #ifdef PKT_FILTER_SUPPORT
 	DHD_TRACE(("%s: %d\n", __FUNCTION__, value));
@@ -671,10 +671,8 @@ int dhd_set_suspend(int value, dhd_pub_t *dhd)
 					iovbuf, sizeof(iovbuf));
 				dhdcdc_set_ioctl(dhd, 0, WLC_SET_VAR, iovbuf, sizeof(iovbuf), 1);
 #endif /* CONFIG_MACH_MAHIMAHI */
-				dhd->early_suspended = 1;
 			} else {
-				dhd->early_suspended = 0;
-				
+
 				/* Kernel resumed  */
 				DHD_TRACE(("%s: Remove extra suspend setting \n", __FUNCTION__));
 #ifndef CUSTOMER_HW_SAMSUNG
@@ -1449,6 +1447,7 @@ dhd_rx_frame(dhd_pub_t *dhdp, int ifidx, void *pktbuf, int numpkt)
 		 */
 		eth = skb->data;
 		len = skb->len;
+		DHD_ERROR(("%s: lenn=%d Enter\n", __FUNCTION__,len));
 
 #ifdef DHD_RX_DUMP
 		dump_data = skb->data;
@@ -1456,24 +1455,24 @@ dhd_rx_frame(dhd_pub_t *dhdp, int ifidx, void *pktbuf, int numpkt)
 		DHD_ERROR(("RX DUMP - %s\n", _get_packet_type_str(protocol)));
 #ifdef DHD_RX_FULL_DUMP
 		if (protocol != ETHER_TYPE_BRCM) {
-			for(k=0; k<skb->len; k++) {
-				DHD_ERROR(("%02X ", dump_data[k]));
-				if ((k&15) == 15) DHD_ERROR(("\n"));
-			}
-			DHD_ERROR(("\n"));
+		for(k=0; k<skb->len; k++) {
+			DHD_ERROR(("%02X ", dump_data[k]));
+			if ((k&15) == 15) DHD_ERROR(("\n"));
+		}
+		DHD_ERROR(("\n"));
 		}
 #endif
 		if (protocol != ETHER_TYPE_BRCM) {
-			if (dump_data[0] == 0xFF) {
-				DHD_ERROR(("%s: BROADCAST\n", __FUNCTION__));
+		if (dump_data[0] == 0xFF) {
+			DHD_ERROR(("%s: BROADCAST\n", __FUNCTION__));
 
-				if ((dump_data[12] == 8) && (dump_data[13] == 6)) {
-					DHD_ERROR(("%s: ARP %d\n", __FUNCTION__, dump_data[0x15]));
-				}
+			if ((dump_data[12] == 8) && (dump_data[13] == 6)) {
+				DHD_ERROR(("%s: ARP %d\n", __FUNCTION__, dump_data[0x15]));
 			}
-			else if (dump_data[0] & 1) 
-				DHD_ERROR(("%s: MULTICAST: %02X:%02X:%02X:%02X:%02X:%02X\n", 
-					__FUNCTION__, dump_data[0], dump_data[1], dump_data[2], dump_data[3], dump_data[4], dump_data[5]));
+		}
+		else if (dump_data[0] & 1) 
+			DHD_ERROR(("%s: MULTICAST: %02X:%02X:%02X:%02X:%02X:%02X\n", 
+				__FUNCTION__, dump_data[0], dump_data[1], dump_data[2], dump_data[3], dump_data[4], dump_data[5]));
 
 			if (protocol == ETHER_TYPE_802_1X) {
 				DHD_ERROR(("ETHER_TYPE_802_1X: ver %d, type %d, replay %d\n", dump_data[14], dump_data[15], dump_data[30]));
@@ -2559,7 +2558,7 @@ dhd_attach(osl_t *osh, struct dhd_bus *bus, uint bus_hdrlen)
 	 * Save the dhd_info into the priv
 	 */
 	memcpy(netdev_priv(net), &dhd, sizeof(dhd));
-	
+
 #if defined(CONFIG_MACH_GODIN) && defined(CONFIG_WIFI_CONTROL_FUNC)
 	g_bus = bus;
 #endif
@@ -3901,7 +3900,7 @@ int dhd_os_wake_lock_timeout(dhd_pub_t *pub)
 		ret = dhd->wakelock_timeout_enable;
 #ifdef CONFIG_HAS_WAKELOCK
 		if (dhd->wakelock_timeout_enable)
-			wake_lock_timeout(&dhd->wl_rxwake, 6*HZ/10);
+			wake_lock_timeout(&dhd->wl_rxwake, HZ);
 #endif
 		dhd->wakelock_timeout_enable = 0;
 		spin_unlock_irqrestore(&dhd->wakelock_spinlock, flags);

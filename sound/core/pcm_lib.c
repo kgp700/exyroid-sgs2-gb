@@ -1726,7 +1726,7 @@ static int wait_for_avail_min(struct snd_pcm_substream *substream,
 		}
 		set_current_state(TASK_INTERRUPTIBLE);
 		snd_pcm_stream_unlock_irq(substream);
-		tout = schedule_timeout(msecs_to_jiffies(10000));
+		tout = schedule_timeout(msecs_to_jiffies(2000));
 		snd_pcm_stream_lock_irq(substream);
 		switch (runtime->status->state) {
 		case SNDRV_PCM_STATE_SUSPENDED:

@@ -57,12 +57,25 @@ static struct xfrm_policy *__xfrm_policy_unlink(struct xfrm_policy *pol,
 static inline int
 __xfrm4_selector_match(struct xfrm_selector *sel, struct flowi *fl)
 {
+#if 1 // IWLAN
+	return addr_match(&fl->fl4_dst, &sel->daddr, sel->prefixlen_d) &&
+		addr_match(&fl->fl4_src, &sel->saddr, sel->prefixlen_s) && 
+		(sel->dport_end ? ((xfrm_flowi_dport(fl) >= (sel->dport & sel->dport_mask)) &&
+		(xfrm_flowi_dport(fl) <= (sel->dport_end & sel->dport_mask))) : 
+		!((xfrm_flowi_dport(fl) ^ sel->dport) & sel->dport_mask)) && 
+		(sel->sport_end ? ((xfrm_flowi_sport(fl) >= (sel->sport & sel->sport_mask)) &&
+		(xfrm_flowi_sport(fl) <= (sel->sport_end & sel->sport_mask))) : 
+		!((xfrm_flowi_sport(fl) ^ sel->sport) & sel->sport_mask)) && 
+		(fl->proto == sel->proto || !sel->proto) && 
+		(fl->oif == sel->ifindex || !sel->ifindex);
+#else
 	return  addr_match(&fl->fl4_dst, &sel->daddr, sel->prefixlen_d) &&
 		addr_match(&fl->fl4_src, &sel->saddr, sel->prefixlen_s) &&
 		!((xfrm_flowi_dport(fl) ^ sel->dport) & sel->dport_mask) &&
 		!((xfrm_flowi_sport(fl) ^ sel->sport) & sel->sport_mask) &&
 		(fl->proto == sel->proto || !sel->proto) &&
 		(fl->oif == sel->ifindex || !sel->ifindex);
+#endif
 }
 
 static inline int

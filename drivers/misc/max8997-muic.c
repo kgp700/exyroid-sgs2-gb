@@ -33,10 +33,6 @@
 #include <linux/mfd/max8997-private.h>
 #include <linux/host_notify.h>
 #include <plat/udc-hs.h>
-#ifdef CONFIG_USBHUB_USB3803
-#include <linux/usb3803.h>
-#endif
-
 
 /* MAX8997 STATUS1 register */
 #define STATUS1_ADC_SHIFT		0
@@ -73,20 +69,12 @@
 #define CTRL2_ACCDET_MASK		(0x1 << CTRL2_ACCDET_SHIFT)
 
 /* MAX8997 CONTROL3 register */
-#define CTRL3_JIGSET_SHIFT		0
-#define CTRL3_BOOTSET_SHIFT		2
 #define CTRL3_ADCDBSET_SHIFT		4
-#define CTRL3_JIGSET_MASK		(0x3 << CTRL3_JIGSET_SHIFT)
-#define CTRL3_BOOTSET_MASK		(0x3 << CTRL3_BOOTSET_SHIFT)
-#define CTRL3_ADCDBSET_MASK		(0x3 << CTRL3_ADCDBSET_SHIFT)
+#define CTRL3_ADCDBSET_MASK		(0x2 << CTRL3_ADCDBSET_SHIFT)
 
 /* Interrupt 1 */
 #define INT_DETACH		(0x1 << 1)
 #define INT_ATTACH		(0x1 << 0)
-
-#if defined(CONFIG_TARGET_LOCALE_NA)
-static int is_default_esn;
-#endif
 
 /* MAX8997 MUIC CHG_TYP setting values */
 enum {
@@ -121,7 +109,7 @@ enum {
 	ADC_JIG_USB_OFF		= 0x18,
 	ADC_JIG_USB_ON		= 0x19,
 	ADC_DESKDOCK		= 0x1a,
-	ADC_CEA936ATYPE2_CHG	= 0x1b,
+	ADC_CEA936ATYPE2_CHG	= 0x1b,	
 	ADC_JIG_UART_OFF	= 0x1c,
 	ADC_JIG_UART_ON		= 0x1d,
 	ADC_CARDOCK		= 0x1d,
@@ -439,7 +427,7 @@ static ssize_t max8997_muic_set_adc_debounce_time(struct device *dev,
 	sscanf(buf, "%d", &value);
 
 	value = (value & 0x3);
-
+	
 #if 0
 	max8997_muic_set_adcdbset(info, value);
 #else
@@ -448,30 +436,6 @@ static ssize_t max8997_muic_set_adc_debounce_time(struct device *dev,
 
 	return count;
 }
-
-#if defined(CONFIG_TARGET_LOCALE_NA)
-static ssize_t esn_show(struct device *dev,
-			struct device_attribute *attr, char *buf)
-{
-	return sprintf(buf, "%d\n", is_default_esn);
-}
-
-static ssize_t esn_store(struct device *dev,
-			  struct device_attribute *attr,
-			  const char *buf, size_t count)
-{
-	struct max8997_muic_info *info = dev_get_drvdata(dev);
-	int size;
-
-	size = sscanf(buf, "%d\n", &is_default_esn);
-	if (is_default_esn == 1) {
-		schedule_delayed_work(&info->init_work, msecs_to_jiffies(1));
-		pr_info("[%s] CDMA I/F Cable is detected\n", __func__);
-	}
-
-	return size;
-}
-#endif
 
 static DEVICE_ATTR(usb_state, S_IRUGO, max8997_muic_show_usb_state, NULL);
 static DEVICE_ATTR(device, S_IRUGO, max8997_muic_show_device, NULL);
@@ -485,9 +449,6 @@ static DEVICE_ATTR(otg_test, 0664,
 static DEVICE_ATTR(adc_debounce_time, 0664,
 		max8997_muic_show_adc_debounce_time,
 		max8997_muic_set_adc_debounce_time);
-#if defined(CONFIG_TARGET_LOCALE_NA)
-static DEVICE_ATTR(esn, 0664, esn_show, esn_store);
-#endif
 
 static struct attribute *max8997_muic_attributes[] = {
 	&dev_attr_usb_state.attr,
@@ -497,9 +458,6 @@ static struct attribute *max8997_muic_attributes[] = {
 	&dev_attr_audio_path.attr,
 	&dev_attr_otg_test.attr,
 	&dev_attr_adc_debounce_time.attr,
-#if defined(CONFIG_TARGET_LOCALE_NA)
-	&dev_attr_esn.attr,
-#endif
 	NULL
 };
 
@@ -559,9 +517,8 @@ static int max8997_muic_set_usb_path(struct max8997_muic_info *info, int path)
 		return -EINVAL;
 	}
 
-#ifndef CONFIG_TARGET_LOCALE_NA
 	gpio_direction_output(mdata->gpio_usb_sel, gpio_val);
-#endif /* CONFIG_TARGET_LOCALE_NA */
+
 	/* Enable/Disable Factory Accessory Detection State Machine */
 	cntl2_val = accdet << CTRL2_ACCDET_SHIFT;
 	max8997_update_reg(client, MAX8997_MUIC_REG_CTRL2, cntl2_val,
@@ -735,7 +692,6 @@ static int max8997_muic_attach_usb_type(struct max8997_muic_info *info, int adc)
 		return ret;
 	}
 
-
 	if (mdata->sw_path == CP_USB_MODE) {
 		info->cable_type = CABLE_TYPE_USB;
 		max8997_muic_set_usb_path(info, CP_USB_MODE);
@@ -746,10 +702,6 @@ static int max8997_muic_attach_usb_type(struct max8997_muic_info *info, int adc)
 
 	if (path == AP_USB_MODE) {
 		if (mdata->usb_cb && info->is_usb_ready)
-#ifdef CONFIG_USBHUB_USB3803
-			/* setting usb hub in Diagnostic(hub) mode */
-			usb3803_set_mode(USB_3803_MODE_HUB);
-#endif /* CONFIG_USBHUB_USB3803 */
 			mdata->usb_cb(USB_CABLE_ATTACHED);
 	}
 
@@ -811,8 +763,6 @@ static void max8997_muic_attach_mhl(struct max8997_muic_info *info, u8 chgtyp)
 	if (info->cable_type == CABLE_TYPE_USB) {
 		if (mdata->usb_cb && info->is_usb_ready)
 			mdata->usb_cb(USB_CABLE_DETACHED);
-
-		max8997_muic_set_charging_type(info, true);
 	}
 #if 0
 	if (info->cable_type == CABLE_TYPE_MHL) {
@@ -906,15 +856,14 @@ static int max8997_muic_handle_attach(struct max8997_muic_info *info,
 		info->cable_type = CABLE_TYPE_NONE;
 
 		max8997_muic_set_charging_type(info, false);
-
+		
 		if (mdata->deskdock_cb)
 			mdata->deskdock_cb(MAX8997_MUIC_DETACHED);
-	} else if (info->cable_type == CABLE_TYPE_CARDOCK
-					&& adc != ADC_CARDOCK) {
+	} else if (info->cable_type == CABLE_TYPE_CARDOCK && adc != ADC_CARDOCK) {
 		dev_warn(info->dev, "%s: assume cardock detach\n", __func__);
 		info->cable_type = CABLE_TYPE_NONE;
 
-		max8997_muic_set_charging_type(info, false);
+		max8997_muic_set_charging_type(info, false);		
 
 		if (mdata->cardock_cb)
 			mdata->cardock_cb(MAX8997_MUIC_DETACHED);
@@ -924,24 +873,10 @@ static int max8997_muic_handle_attach(struct max8997_muic_info *info,
 	 * Old MUIC : ADC value:0x00 or 0x01, ADCLow:1
 	 * New MUIC : ADC value is not set(Open), ADCLow:1, ADCError:1
 	 */
-
-#if defined(CONFIG_TARGET_LOCALE_NAATT)
-	if (adclow && adcerr) {
-		if (info->cable_type == CABLE_TYPE_JIG_UART_OFF) {
-			dev_info(info->dev, "%s: current state is jig_uart_off,"
-					"just ignore\n", __func__);
-			return 0;
-		} else {
-			max8997_muic_attach_mhl(info, chgtyp);
-			return 0;
-		}
-	}
-#else
 	if (adclow && adcerr) {
 		max8997_muic_attach_mhl(info, chgtyp);
 		return 0;
 	}
-#endif
 
 	switch (adc) {
 	case ADC_GND:
@@ -963,7 +898,6 @@ static int max8997_muic_handle_attach(struct max8997_muic_info *info,
 			if (mdata->usb_cb && info->is_usb_ready)
 				mdata->usb_cb(USB_OTGHOST_ATTACHED);
 		} else if (chgtyp == CHGTYP_USB ||
-				chgtyp == CHGTYP_DOWNSTREAM_PORT ||
 				chgtyp == CHGTYP_DEDICATED_CHGR ||
 				chgtyp == CHGTYP_500MA	||
 				chgtyp == CHGTYP_1A) {
@@ -984,24 +918,14 @@ static int max8997_muic_handle_attach(struct max8997_muic_info *info,
 		break;
 	case ADC_DESKDOCK:
 	case ADC_CARDOCK:
-		#if defined(CONFIG_TARGET_LOCALE_NA)
-		if (is_default_esn == 1) {
-			pr_info("SWITCHING TO CDMA I/F CABLE Mode\n");
-			max8997_muic_handle_jig_uart(info, vbvolt);
-		}
-		else
-		#endif
-		{
-			max8997_muic_attach_dock_type(info, adc);
-			if (chgtyp == CHGTYP_USB ||
-				chgtyp == CHGTYP_DOWNSTREAM_PORT ||
+		max8997_muic_attach_dock_type(info, adc);
+		if (chgtyp == CHGTYP_USB ||
 				chgtyp == CHGTYP_DEDICATED_CHGR ||
 				chgtyp == CHGTYP_500MA	||
 				chgtyp == CHGTYP_1A)
-				ret = max8997_muic_set_charging_type(info, false);
-			else if (chgtyp == CHGTYP_NO_VOLTAGE && !chgdetrun)
-				ret = max8997_muic_set_charging_type(info, true);
-		}
+			ret = max8997_muic_set_charging_type(info, false);
+		else if (chgtyp == CHGTYP_NO_VOLTAGE && !chgdetrun)
+			ret = max8997_muic_set_charging_type(info, true);
 		break;
 	case ADC_CEA936ATYPE1_CHG:
 	case ADC_CEA936ATYPE2_CHG:
@@ -1023,16 +947,21 @@ static int max8997_muic_handle_attach(struct max8997_muic_info *info,
 			}
 			ret = max8997_muic_attach_usb_type(info, adc);
 			break;
-		case CHGTYP_DOWNSTREAM_PORT:
 		case CHGTYP_DEDICATED_CHGR:
 		case CHGTYP_500MA:
 		case CHGTYP_1A:
+			if (mdata->is_mhl_attached
+					&& mdata->is_mhl_attached() &&
+					info->cable_type == CABLE_TYPE_MHL) {
+				dev_info(info->dev, "%s: MHL(charging)\n",
+						__func__);
+				info->cable_type = CABLE_TYPE_MHL_VB;
+				ret = max8997_muic_set_charging_type(info,
+						false);
+				return ret;
+			}
 			dev_info(info->dev, "%s:TA\n", __func__);
 			info->cable_type = CABLE_TYPE_TA;
-#ifdef CONFIG_USBHUB_USB3803
-			/* setting usb hub in default mode (standby) */
-			usb3803_set_mode(USB_3803_MODE_STANDBY);
-#endif  /* CONFIG_USBHUB_USB3803 */
 			ret = max8997_muic_set_charging_type(info, false);
 			if (ret)
 				info->cable_type = CABLE_TYPE_NONE;
@@ -1063,10 +992,6 @@ static int max8997_muic_handle_detach(struct max8997_muic_info *info)
 	max8997_update_reg(client, MAX8997_MUIC_REG_CTRL2,
 			(1 << CTRL2_ACCDET_SHIFT), CTRL2_ACCDET_MASK);
 
-#ifdef CONFIG_USBHUB_USB3803
-	/* setting usb hub in default mode (standby) */
-	usb3803_set_mode(USB_3803_MODE_STANDBY);
-#endif  /* CONFIG_USBHUB_USB3803 */
 	info->previous_key = DOCK_KEY_NONE;
 
 	if (info->cable_type == CABLE_TYPE_NONE) {
@@ -1190,7 +1115,7 @@ static int max8997_muic_handle_detach(struct max8997_muic_info *info)
 	return ret;
 }
 
-static void max8997_muic_detect_dev(struct max8997_muic_info *info, int irq)
+static void max8997_muic_detect_dev(struct max8997_muic_info *info)
 {
 	struct i2c_client *client = info->muic;
 	u8 status[2];
@@ -1208,8 +1133,7 @@ static void max8997_muic_detect_dev(struct max8997_muic_info *info, int irq)
 	dev_info(info->dev, "%s: STATUS1:0x%x, 2:0x%x\n", __func__,
 			status[0], status[1]);
 
-	if ((irq == info->irq_adc) &&
-			max8997_muic_handle_dock_vol_key(info, status[0]))
+	if (max8997_muic_handle_dock_vol_key(info, status[0]))
 		return;
 
 	adc = status[0] & STATUS1_ADC_MASK;
@@ -1220,7 +1144,6 @@ static void max8997_muic_detect_dev(struct max8997_muic_info *info, int irq)
 		if (chgtyp == CHGTYP_NO_VOLTAGE)
 			intr = INT_DETACH;
 		else if (chgtyp == CHGTYP_USB ||
-				chgtyp == CHGTYP_DOWNSTREAM_PORT ||
 				chgtyp == CHGTYP_DEDICATED_CHGR ||
 				chgtyp == CHGTYP_500MA	||
 				chgtyp == CHGTYP_1A) {
@@ -1247,7 +1170,7 @@ static irqreturn_t max8997_muic_irq(int irq, void *data)
 	dev_info(info->dev, "%s: irq:%d\n", __func__, irq);
 
 	mutex_lock(&info->mutex);
-	max8997_muic_detect_dev(info, irq);
+	max8997_muic_detect_dev(info);
 	mutex_unlock(&info->mutex);
 
 	return IRQ_HANDLED;
@@ -1268,7 +1191,7 @@ static int max8997_muic_irq_init(struct max8997_muic_info *info)
 
 #if !defined(CONFIG_MACH_C1_REV00)
 	dev_info(info->dev, "%s: system_rev=%d\n", __func__, system_rev);
-#if !defined(CONFIG_MACH_Q1_REV00) && !defined(CONFIG_MACH_Q1_REV02)
+#if !defined(CONFIG_MACH_P6_REV02)
 	if (system_rev < 0x3)
 		return 0;
 #endif
@@ -1298,7 +1221,7 @@ static void max8997_muic_init_detect(struct work_struct *work)
 
 	dev_info(info->dev, "%s\n", __func__);
 	mutex_lock(&info->mutex);
-	max8997_muic_detect_dev(info, -1);
+	max8997_muic_detect_dev(info);
 	mutex_unlock(&info->mutex);
 }
 
@@ -1319,10 +1242,6 @@ static void max8997_muic_usb_detect(struct work_struct *work)
 			case CABLE_TYPE_USB:
 			case CABLE_TYPE_JIG_USB_OFF:
 			case CABLE_TYPE_JIG_USB_ON:
-#ifdef CONFIG_USBHUB_USB3803
-				/* setting usb hub in Diagnostic(hub) mode */
-				usb3803_set_mode(USB_3803_MODE_HUB);
-#endif /* CONFIG_USBHUB_USB3803 */
 				mdata->usb_cb(USB_CABLE_ATTACHED);
 				break;
 			case CABLE_TYPE_OTG:
@@ -1349,8 +1268,8 @@ static void max8997_muic_mhl_detect(struct work_struct *work)
 
 	if (info->cable_type == CABLE_TYPE_MHL ||
 			info->cable_type == CABLE_TYPE_MHL_VB) {
-		if (mdata->mhl_cb)
-			mdata->mhl_cb(MAX8997_MUIC_ATTACHED);
+	if (mdata->mhl_cb)
+		mdata->mhl_cb(MAX8997_MUIC_ATTACHED);
 	}
 	mutex_unlock(&info->mutex);
 }
@@ -1408,19 +1327,13 @@ static int __devinit max8997_muic_probe(struct platform_device *pdev)
 		goto err_input;
 	}
 
-#ifdef CONFIG_TARGET_LOCALE_NA
-	if (gpio_is_valid(info->muic_data->gpio_uart_sel)) {
-		CHECK_GPIO(info->muic_data->gpio_uart_sel, "UART_SEL");
-#else
 	if (gpio_is_valid(info->muic_data->gpio_usb_sel)) {
 		CHECK_GPIO(info->muic_data->gpio_usb_sel, "USB_SEL");
-#endif /* CONFIG_TARGET_LOCALE_NA */
 
 		if (info->muic_data->cfg_uart_gpio)
 			info->muic_data->uart_path =
 				info->muic_data->cfg_uart_gpio();
 
-#ifndef CONFIG_TARGET_LOCALE_NA
 		ret = gpio_request(info->muic_data->gpio_usb_sel, "USB_SEL");
 		if (ret) {
 			dev_info(info->dev, "%s: fail to request gpio(%d)\n",
@@ -1431,7 +1344,6 @@ static int __devinit max8997_muic_probe(struct platform_device *pdev)
 			dev_info(info->dev, "%s: CP USB\n", __func__);
 			info->muic_data->sw_path = CP_USB_MODE;
 		}
-#endif /* CONFIG_TARGET_LOCALE_NA */
 	}
 
 #if 1
@@ -1459,13 +1371,6 @@ static int __devinit max8997_muic_probe(struct platform_device *pdev)
 				dev_attr_usb_sel.attr.name);
 		goto fail;
 	}
-#if defined(CONFIG_TARGET_LOCALE_NA)
-	if (device_create_file(switch_dev, &dev_attr_esn) < 0) {
-		dev_err(&pdev->dev, "%s: failed to create file(%s)\n", __func__,
-				dev_attr_esn.attr.name);
-		goto fail;
-	}
-#endif
 #endif
 
 	if (info->muic_data->init_cb)
@@ -1527,9 +1432,7 @@ static int __devexit max8997_muic_remove(struct platform_device *pdev)
 		free_irq(info->irq_chgtype, info);
 		free_irq(info->irq_vbvolt, info);
 		free_irq(info->irq_adcerr, info);
-#ifndef CONFIG_TARGET_LOCALE_NA
 		gpio_free(info->muic_data->gpio_usb_sel);
-#endif /* CONFIG_TARGET_LOCALE_NA */
 		mutex_destroy(&info->mutex);
 		kfree(info);
 	}
@@ -1537,33 +1440,10 @@ static int __devexit max8997_muic_remove(struct platform_device *pdev)
 	return 0;
 }
 
-void max8997_muic_shutdown(struct device *dev)
-{
-	struct max8997_muic_info *info = dev_get_drvdata(dev);
-	int ret;
-	u8 val;
-
-	if (!info->muic) {
-		dev_err(info->dev, "%s: no muic i2c client\n", __func__);
-		return;
-	}
-
-	dev_info(info->dev, "%s: JIGSet: auto detection\n", __func__);
-	val = (0 << CTRL3_JIGSET_SHIFT) | (0 << CTRL3_BOOTSET_SHIFT);
-
-	ret = max8997_update_reg(info->muic, MAX8997_MUIC_REG_CTRL3, val,
-			CTRL3_JIGSET_MASK | CTRL3_BOOTSET_MASK);
-	if (ret < 0) {
-		dev_err(info->dev, "%s: fail to update reg\n", __func__);
-		return;
-	}
-}
-
 static struct platform_driver max8997_muic_driver = {
 	.driver		= {
 		.name	= "max8997-muic",
 		.owner	= THIS_MODULE,
-		.shutdown = max8997_muic_shutdown,
 	},
 	.probe		= max8997_muic_probe,
 	.remove		= __devexit_p(max8997_muic_remove),

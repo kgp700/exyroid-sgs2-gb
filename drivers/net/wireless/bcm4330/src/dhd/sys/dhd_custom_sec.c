@@ -4,7 +4,6 @@
 
 #include <proto/ethernet.h>
 #include <dngl_stats.h>
-#include <bcmutils.h>
 #include <dhd.h>
 #include <dhd_dbg.h>
 
@@ -150,7 +149,7 @@ int WriteRDWR_Macaddr(struct ether_addr *mac)
 
 	if ((g_iMacFlag != MACADDR_COB) && (g_iMacFlag != MACADDR_MOD))
 		return 0;
-	
+
 	sprintf(buf,"%02X:%02X:%02X:%02X:%02X:%02X\n",
 			mac->octet[0],mac->octet[1],mac->octet[2],
 			mac->octet[3],mac->octet[4],mac->octet[5]);
@@ -174,9 +173,7 @@ int WriteRDWR_Macaddr(struct ether_addr *mac)
 		set_fs(oldfs);
 		filp_close(fp_mac, NULL);
 	}
-
-	return 0;
-	
+ 		return 0;
 }
 
 #if 0 /* disable because it's not used yet */
@@ -210,11 +207,7 @@ int CheckRDWR_Macaddr(	struct dhd_info *dhd, dhd_pub_t *dhdp, struct ether_addr 
 	char randommac[3]		= {0};
 	char buf[18]			= {0};
 	char* filepath			= "/data/.mac.info";
-	#ifdef CONFIG_TARGET_LOCALE_NA	
-    char* nvfilepath       = "/data/misc/wifi/.nvmac.info";
-	#else	
 	char* nvfilepath		= "/data/.nvmac.info";
-	#endif
 	char cur_mac[128]		= {0};
 	char dummy_mac[ETHER_ADDR_LEN]		= { 0x00, 0x90, 0x4C, 0xC5, 0x12, 0x38 };
 	char cur_macbuffer[18]	= {0};
@@ -389,9 +382,7 @@ int check_module_cid(dhd_pub_t *dhd)
 {
 	int ret = -1;
 	unsigned char cis_buf[128] = {0};
-	unsigned char cid_buf[10] = {0};
 	const char* cidfilepath = "/data/.cid.info";
-	int nread;
 
 	/* Try reading out from CIS */
 	cis_rw_t *cish = (cis_rw_t *)&cis_buf[8];
@@ -399,15 +390,11 @@ int check_module_cid(dhd_pub_t *dhd)
 
 	fp_cid = filp_open(cidfilepath, O_RDONLY, 0);
 	if (!IS_ERR(fp_cid)) { 
-		kernel_read(fp_cid, fp_cid->f_pos, &cid_buf, sizeof(cid_buf)); 
-		if(strstr(cid_buf,"samsung")||strstr(cid_buf,"murata")) {
 		/* file does exist, just return */
 		filp_close(fp_cid, NULL);
 		return 0;
 	}
 
-		DHD_ERROR(("[WIFI].cid.info file already exists but it contains an unknown id [%s]\n", cid_buf));
-	}
 	cish->source = 0;
 	cish->byteoff = 0;
 	cish->nbytes = sizeof(cis_buf);
@@ -444,7 +431,6 @@ int Write_Macaddr(struct ether_addr *mac)
 	char buf[18]			= {0};
 	mm_segment_t oldfs		= {0};
 	int ret = -1;
-	int retry_count = 0;
 
 startwrite:
 	
@@ -476,19 +462,20 @@ startwrite:
 	fp_mac = filp_open(filepath, O_RDONLY, 0);
 	ret = kernel_read(fp_mac, 0, buf, 18);
 
-	if((ret == 0) && (retry_count++ < 3)){
-		filp_close(fp_mac, NULL);
-		goto startwrite;
-	}	
+  if(ret==0){
+  	filp_close(fp_mac, NULL);
+  	goto startwrite;
+  }	
 	
-	filp_close(fp_mac, NULL);
-
+  filp_close(fp_mac, NULL);
+  
 	return 0;
 	
 }
 #endif
 
 #ifdef CONFIG_CONTROL_PM
+#include <bcmutils.h>
 extern bool g_PMcontrol;
 void sec_control_pm(dhd_pub_t *dhd, uint *power_mode)
 {

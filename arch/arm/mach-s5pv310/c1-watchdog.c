@@ -38,7 +38,7 @@ static unsigned watchdog_reset = 20;
 module_param_named(sec_reset, watchdog_reset, uint, 0644);
 
 /* pet timeout in seconds */
-static unsigned watchdog_pet = 0; /* 0 means off, 5 is proper */
+static unsigned watchdog_pet = 5;
 module_param_named(sec_pet, watchdog_pet, uint, 0644);
 
 static struct workqueue_struct *watchdog_wq;
@@ -138,12 +138,6 @@ static struct platform_driver watchdog_driver = {
 
 static int __init watchdog_init(void)
 {
-	/* watchdog can be disabled by providing either
-	   "c1_watchdog.sec_pet=0" or "c1_watchdog.sec_reset=0" to
-	   CMDLINE */
-	if (!watchdog_reset || !watchdog_pet)
-		return -EINVAL;
-
 	return platform_driver_register(&watchdog_driver);
 }
 

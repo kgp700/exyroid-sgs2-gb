@@ -41,6 +41,7 @@
 
 static struct resource *s3c_mdnie_mem;
 static void __iomem *s3c_mdnie_base;
+extern int fimd_power_off;
 
 #define s3c_mdnie_readl(addr)             __raw_readl((s3c_mdnie_base + addr))
 #define s3c_mdnie_writel(val, addr)        __raw_writel(val, (s3c_mdnie_base + addr))
@@ -83,15 +84,6 @@ static char const*const DMB_COLD_MODE_FILE = DMB_COLD_MODE_PATH;
 static char const*const  DMB_COLD_OUTDOOR_MODE_FILE = DMB_COLD_OUTDOOR_MODE_PATH;
 #endif	/* CONFIG_TARGET_LOCALE_KOR */  
 
-#ifdef CONFIG_TARGET_LOCALE_NTT
-static char const*const ISDBT_MODE_FILE = ISDBT_MODE_PATH; 
-static char const*const ISDBT_OUTDOOR_MODE_FILE = ISDBT_OUTDOOR_MODE_PATH;
-static char const*const ISDBT_WARM_MODE_FILE = ISDBT_WARM_MODE_PATH; 
-static char const*const ISDBT_WARM_OUTDOOR_MODE_FILE = ISDBT_WARM_OUTDOOR_MODE_PATH;
-static char const*const ISDBT_COLD_MODE_FILE = ISDBT_COLD_MODE_PATH; 
-static char const*const ISDBT_COLD_OUTDOOR_MODE_FILE = ISDBT_COLD_OUTDOOR_MODE_PATH;
-#endif
-
 
 int mDNIe_txtbuf_to_parsing(char const*  pFilepath);
 
@@ -115,12 +107,7 @@ typedef enum {
 	mDNIe_DMB_MODE = 20,
 	mDNIe_DMB_WARM_MODE,
 	mDNIe_DMB_COLD_MODE,
-#endif	/* CONFIG_TARGET_LOCALE_KOR */
-#ifdef CONFIG_TARGET_LOCALE_NTT
-	mDNIe_ISDBT_MODE = 30,
-	mDNIe_ISDBT_WARM_MODE,
-	mDNIe_ISDBT_COLD_MODE,
-#endif
+#endif	/* CONFIG_TARGET_LOCALE_KOR */  
 } Lcd_mDNIe_UI;
 
 typedef enum {
@@ -340,6 +327,7 @@ int s3c_mdnie_unmask(void)
 {
 	unsigned int mask;
 
+	if (fimd_power_off) BUG();
 	s3c_mdnie_writel(0x0, S3C_MDNIE_rR40);
 
 	return 0;
@@ -365,6 +353,7 @@ int s3c_mdnie_set_size(unsigned int hsize, unsigned int vsize)
 {
 	unsigned int size;
 
+	if (fimd_power_off) BUG();
 	size = s3c_mdnie_readl(S3C_MDNIE_rR34);
 	size &= ~S3C_MDNIE_SIZE_MASK;
 	size |= hsize;
@@ -458,19 +447,6 @@ void mDNIe_Set_Mode(Lcd_mDNIe_UI mode, u8 mDNIe_Outdoor_OnOff)
 			mDNIe_txtbuf_to_parsing(DMB_COLD_OUTDOOR_MODE_FILE);
 			break;
 #endif /* CONFIG_TARGET_LOCALE_KOR */ 
-#ifdef CONFIG_TARGET_LOCALE_NTT
-		case mDNIe_ISDBT_MODE:
-			mDNIe_txtbuf_to_parsing(ISDBT_OUTDOOR_MODE_FILE);
-			break;
-
-		case mDNIe_ISDBT_WARM_MODE:
-			mDNIe_txtbuf_to_parsing(ISDBT_WARM_OUTDOOR_MODE_FILE);
-			break;
-
-		case mDNIe_ISDBT_COLD_MODE:
-			mDNIe_txtbuf_to_parsing(ISDBT_COLD_OUTDOOR_MODE_FILE);
-			break;
-#endif
 
 		}
 
@@ -526,19 +502,7 @@ void mDNIe_Set_Mode(Lcd_mDNIe_UI mode, u8 mDNIe_Outdoor_OnOff)
 			mDNIe_txtbuf_to_parsing(DMB_COLD_MODE_FILE);
 			break;
 #endif /* CONFIG_TARGET_LOCALE_KOR */ 
-#ifdef CONFIG_TARGET_LOCALE_NTT
-		case mDNIe_ISDBT_MODE:
-			mDNIe_txtbuf_to_parsing(ISDBT_MODE_FILE);
-			break;
 
-		case mDNIe_ISDBT_WARM_MODE:
-			mDNIe_txtbuf_to_parsing(ISDBT_WARM_MODE_FILE);
-			break;
-
-		case mDNIe_ISDBT_COLD_MODE:
-			mDNIe_txtbuf_to_parsing(ISDBT_COLD_MODE_FILE);
-			break;
-#endif
 		}
 
 		current_mDNIe_Mode = mode;
@@ -652,19 +616,6 @@ static ssize_t mdnieset_ui_file_cmd_show(struct device *dev,
 		mdnie_ui = mDNIe_DMB_COLD_MODE;
 		break;
 #endif /* CONFIG_TARGET_LOCALE_KOR */ 		
-#ifdef CONFIG_TARGET_LOCALE_NTT
-	case mDNIe_ISDBT_MODE:
-		mdnie_ui = mDNIe_ISDBT_MODE;
-		break;
-
-	case mDNIe_ISDBT_WARM_MODE:
-		mdnie_ui = mDNIe_ISDBT_WARM_MODE;
-		break;
-
-	case mDNIe_ISDBT_COLD_MODE:
-		mdnie_ui = mDNIe_ISDBT_COLD_MODE;
-		break;
-#endif
 	}
 	return sprintf(buf, "%u\n", mdnie_ui);
 }
@@ -724,19 +675,6 @@ static ssize_t mdnieset_ui_file_cmd_store(struct device *dev,
 		current_mDNIe_Mode = mDNIe_DMB_COLD_MODE;
 		break;
 #endif /* CONFIG_TARGET_LOCALE_KOR */ 
-#ifdef CONFIG_TARGET_LOCALE_NTT
-	case SIG_MDNIE_ISDBT_MODE:
-		current_mDNIe_Mode = mDNIe_ISDBT_MODE;
-		break;
-
-	case SIG_MDNIE_ISDBT_WARM_MODE:
-		current_mDNIe_Mode = mDNIe_ISDBT_WARM_MODE;
-		break;
-
-	case SIG_MDNIE_ISDBT_COLD_MODE:
-		current_mDNIe_Mode = mDNIe_ISDBT_COLD_MODE;
-		break;
-#endif
 
 	default:
 		printk(KERN_ERR "\nmdnieset_ui_file_cmd_store value is wrong : value(%d)\n", value);
@@ -921,6 +859,7 @@ void mDNIe_Mode_set_for_lightsensor(u16 *buf)
 	u32 i = 0;
 	int cnt = 0;
 
+	if (fimd_power_off) BUG();
 	if (cur_adc_level >= pre_adc_level) {	/*0 => END_SEQ*/
 		while ((*(buf+i)) != END_SEQ) {
 			if ((*(buf+i)) == 0x0100) {
@@ -1109,6 +1048,7 @@ void mDNIe_tuning_set(void)
 {
 	u32 i = 0;
 
+	if (fimd_power_off) BUG();
 	while (mDNIe_data[i] != END_SEQ) {
 		s3c_mdnie_writel(mDNIe_data[i+1], mDNIe_data[i]);
 		//printk(KERN_INFO "[mDNIe] mDNIe_tuning_initialize: addr(0x%x), data(0x%x)  \n", mDNIe_data[i], mDNIe_data[i+1]);
@@ -1243,6 +1183,7 @@ void mDNIe_Mode_set_for_backlight(u16 *buf)
 	if (IsLDIEnabled()) {
 		mutex_lock(&mdnie_use);
 
+		if (fimd_power_off) BUG();
 		/*if (mdnie_tuning_backlight)*/
 		{
 			while ((*(buf+i)) != END_SEQ) {

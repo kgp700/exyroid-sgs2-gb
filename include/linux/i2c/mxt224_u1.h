@@ -20,7 +20,6 @@
 
 #define MXT224_THRESHOLD		40
 #define MXT224E_THRESHOLD		50
-
 #define MXT224_MAX_MT_FINGERS	10
 
 
@@ -139,8 +138,8 @@ enum {
 struct mxt224_platform_data {
 	int max_finger_touches;
 	const u8 **config;
-	const u8 **config_e;
-	const u8 *t48_ta_cfg;
+	const u8 **config_e;	
+	const u8 *t48_ta_cfg;	
 	int gpio_read_done;
 	int min_x;
 	int max_x;

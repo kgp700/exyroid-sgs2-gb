@@ -36,6 +36,121 @@ static int s5pv310_pd_init(struct device *dev)
 	return 0;
 }
 
+int fimd_power_off;
+
+int s5pv310_pd_lcd_enable(struct device *dev)
+{
+	struct samsung_pd_info *pdata =  dev->platform_data;
+	struct s5pv310_pd_data *data = (struct s5pv310_pd_data *) pdata->data;
+	u32 timeout;
+	u32 tmp = 0;
+
+	if (data->read_base)
+		/*  save IP clock gating register */
+		tmp = __raw_readl(data->clk_base);
+
+	/*  enable all the clocks of IPs in the power domain */
+	__raw_writel(0xffffffff, data->clk_base);
+
+	__raw_writel(S5P_INT_LOCAL_PWR_EN, pdata->base);
+
+	/* Wait max 1ms */
+	timeout = 1000;
+	while ((__raw_readl(pdata->base + 0x4) & S5P_INT_LOCAL_PWR_EN)
+		!= S5P_INT_LOCAL_PWR_EN) {
+		if (timeout == 0) {
+			printk(KERN_ERR "Power domain %s enable failed.\n",
+				dev_name(dev));
+			return -ETIMEDOUT;
+		}
+		timeout--;
+		udelay(1);
+	}
+
+	if (timeout ==0) {
+		timeout = 1000;
+		__raw_writel(0x1, pdata->base + 0x8);
+		__raw_writel(S5P_INT_LOCAL_PWR_EN, pdata->base);
+		while ((__raw_readl(pdata->base + 0x4) & S5P_INT_LOCAL_PWR_EN)
+			!= S5P_INT_LOCAL_PWR_EN) {
+			if (timeout == 0) {
+				printk(KERN_ERR "Power domain %s enable failed 2nd.\n",
+					dev_name(dev));
+				BUG();
+				return -ETIMEDOUT;
+			}
+			timeout--;
+			udelay(1);
+		}
+		__raw_writel(0x2, pdata->base + 0x8);
+	}
+
+	if (data->read_base) {
+		/* dummy read to check the completion of power-on sequence */
+		__raw_readl(data->read_base);
+
+		/* restore IP clock gating register */
+		__raw_writel(tmp, data->clk_base);
+	}
+
+	printk(KERN_ERR "Power domain %s enabled.\n", dev_name(dev));
+	fimd_power_off = 0;
+
+	return 0;
+}
+
+static int s5pv310_pd_lcd_disable(struct device *dev)
+{
+	struct samsung_pd_info *pdata =  dev->platform_data;
+	u32 timeout;
+
+	static int boot_lcd0 = 1;
+	if (boot_lcd0) {
+		if(!strncmp(dev_name(dev), "samsung-pd.2", POWERDOMAIN_NAME_LEN)) {
+			printk("ldo0 not disable only initial booting\n");
+			boot_lcd0 = 0;
+			return 0;
+		}
+		printk("try to disable lcd0 in booting\n");
+	}
+
+	__raw_writel(0, pdata->base);
+
+	/* Wait max 1ms */
+	timeout = 1000;
+	while (__raw_readl(pdata->base + 0x4) & S5P_INT_LOCAL_PWR_EN) {
+		if (timeout == 0) {
+			printk(KERN_ERR "Power domain %s disable failed.\n",
+				dev_name(dev));
+			return -ETIMEDOUT;
+		}
+		timeout--;
+		udelay(1);
+	}
+
+	if (timeout ==0) {
+		timeout = 1000;
+		__raw_writel(0x1, pdata->base + 0x8);
+		__raw_writel(0, pdata->base);
+		while (__raw_readl(pdata->base + 0x4) & S5P_INT_LOCAL_PWR_EN) {
+			if (timeout == 0) {
+				printk(KERN_ERR "Power domain %s disable failed 2nd.\n",
+					dev_name(dev));
+				BUG();
+				return -ETIMEDOUT;
+			}
+			timeout--;
+			udelay(1);
+		}
+		__raw_writel(0x2, pdata->base + 0x8);
+	}
+
+	fimd_power_off = 1;
+	printk(KERN_ERR "Power domain %s disabled.\n", dev_name(dev));
+
+	return 0;
+}
+
 int s5pv310_pd_enable(struct device *dev)
 {
 	struct samsung_pd_info *pdata =  dev->platform_data;
@@ -98,16 +213,6 @@ static int s5pv310_pd_disable(struct device *dev)
 {
 	struct samsung_pd_info *pdata =  dev->platform_data;
 	u32 timeout;
-
-	static int boot_lcd0 = 1;
-	if (boot_lcd0) {
-		if(!strncmp(dev_name(dev), "samsung-pd.2", POWERDOMAIN_NAME_LEN)) {
-			printk("ldo0 not disable only initial booting");
-			boot_lcd0 = 0;
-			return 0;
-		}
-		printk("try to disable lcd0 in booting");
-	}
 
 	__raw_writel(0, pdata->base);
 
@@ -178,8 +283,8 @@ struct platform_device s5pv310_device_pd[] = {
 		.dev = {
 			.platform_data = &(struct samsung_pd_info) {
 				.init		= s5pv310_pd_init,
-				.enable		= s5pv310_pd_enable,
-				.disable	= s5pv310_pd_disable,
+				.enable		= s5pv310_pd_lcd_enable,
+				.disable	= s5pv310_pd_lcd_disable,
 				.base		= S5P_PMU_LCD0_CONF,
 				.data		= &(struct s5pv310_pd_data) {
 					.clk_base	= S5P_CLKGATE_IP_LCD0,

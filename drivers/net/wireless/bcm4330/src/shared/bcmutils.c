@@ -1414,7 +1414,15 @@ pktsetprio(void *pkt, bool update_vtag)
 		if (ntoh16(evh->ether_type) == ETHER_TYPE_IP) {
 			uint8 *ip_body = pktdata + sizeof(struct ethervlan_header);
 			uint8 tos_tc = IP_TOS46(ip_body);
-			dscp_prio = (int)(tos_tc >> IPV4_TOS_PREC_SHIFT);
+
+			/* FMC fix */
+			uint8 tos = tos_tc >> 2;
+			if (tos == 0x2E)
+				dscp_prio = 6;
+			else if (tos == 0x1A)
+				dscp_prio = 4;
+			else
+				dscp_prio = (int)(tos_tc >> IPV4_TOS_PREC_SHIFT);
 		}
 
 		/* DSCP priority gets precedence over 802.1P (vlan tag) */
@@ -1441,7 +1449,16 @@ pktsetprio(void *pkt, bool update_vtag)
 	} else if (ntoh16(eh->ether_type) == ETHER_TYPE_IP) {
 		uint8 *ip_body = pktdata + sizeof(struct ether_header);
 		uint8 tos_tc = IP_TOS46(ip_body);
-		priority = (int)(tos_tc >> IPV4_TOS_PREC_SHIFT);
+
+		/* FMC fix */
+		uint8 tos = tos_tc >> 2;
+		if (tos == 0x2E)
+			priority = 6;
+		else if (tos == 0x1A)
+			priority = 4;
+		else
+			priority = (int)(tos_tc >> IPV4_TOS_PREC_SHIFT);
+
 		rc |= PKTPRIO_DSCP;
 	}
 

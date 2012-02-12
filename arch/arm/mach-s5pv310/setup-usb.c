@@ -106,10 +106,9 @@ int is_usb_host_phy_suspend(void)
 		unsigned long flags;
 		local_irq_save(flags);
 		if (__raw_readl(S5P_USBHOST_PHY_CONTROL) & 0x1) {
-#if defined(CONFIG_SAMSUNG_PHONE_SVNET)
+
 			mc_control_active_state(0);
 			mc_control_pda_active(0);
-#endif
 			__raw_writel(__raw_readl(S3C_USBOTG_PHYPWR)
 				|(0x1<<7)|(0x1<<6), S3C_USBOTG_PHYPWR);
 			__raw_writel(__raw_readl(S5P_USBHOST_PHY_CONTROL)
@@ -280,9 +279,7 @@ int usb_host_phy_resume(void)
 
 	if (!(__raw_readl(S5P_USBHOST_PHY_CONTROL) & 0x1)) {
 		usb_clk_get(USBHOST_CLK);
-#if defined(CONFIG_SAMSUNG_PHONE_SVNET)
 		mc_control_pda_active(1);
-#endif
 		printk(KERN_DEBUG "Host USB : Reset-resume\n");
 		__raw_writel(__raw_readl(S5P_USBHOST_PHY_CONTROL)
 			|(0x1<<0), S5P_USBHOST_PHY_CONTROL);

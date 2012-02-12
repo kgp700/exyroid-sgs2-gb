@@ -56,6 +56,7 @@
 #define LOGO_MEM_BASE		        (LPDDR1_BASE_ADDR + 0x0EC00000)	/* 0x5EC00000 from Bootloader */
 #endif
 
+extern int fimd_power_off;
 struct s3cfb_fimd_desc		*fbfimd;
 
 inline struct s3cfb_global *get_fimd_global(int id)
@@ -266,6 +267,7 @@ static int s3cfb_sysfs_store_mdnie_power(struct device *dev,
 	struct s3cfb_global *fbdev[2];
 
 	sscanf(buf, "%d", &enable);
+	if (fimd_power_off) BUG();
 
 	if (enable) {
 		for (i = 0; i < FIMD_MAX; i++) {

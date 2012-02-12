@@ -41,6 +41,7 @@
 
 static struct resource *s3c_ielcd_mem;
 static void __iomem *s3c_ielcd_base;
+extern int fimd_power_off;
 
 #define s3c_ielcd_readl(addr)             __raw_readl((s3c_ielcd_base + addr))
 #define s3c_ielcd_writel(val, addr)        __raw_writel(val, (s3c_ielcd_base + addr))
@@ -79,12 +80,14 @@ int s3c_ielcd_hw_init(void)
 
 int s3c_ielcd_logic_start(void)
 {
+	if (fimd_power_off) BUG();
 	s3c_ielcd_writel(S3C_IELCD_MAGIC_KEY, S3C_IELCD_MODE);
 	return 0;
 }
 
 int s3c_ielcd_logic_stop(void)
 {
+	if (fimd_power_off) BUG();
 	s3c_ielcd_writel(0, S3C_IELCD_MODE);
 	return 0;
 }
@@ -93,6 +96,7 @@ int s3c_ielcd_start(void)
 {
 	unsigned int con;
 
+	if (fimd_power_off) BUG();
 	con = s3c_ielcd_readl(S3C_IELCD_VIDCON0);
 	con |= (S3C_VIDCON0_ENVID_ENABLE | S3C_VIDCON0_ENVID_F_ENABLE);
 	s3c_ielcd_writel(con, S3C_IELCD_VIDCON0);
@@ -104,6 +108,7 @@ int s3c_ielcd_stop(void)
 {
 	unsigned int con;
 
+	if (fimd_power_off) BUG();
 	con = s3c_ielcd_readl(S3C_IELCD_VIDCON0);
 	/*con &= ~(S3C_VIDCON0_ENVID_ENABLE| S3C_VIDCON0_ENVID_F_ENABLE);*/
 	con &= ~(S3C_VIDCON0_ENVID_F_ENABLE);
@@ -116,6 +121,7 @@ int s3c_ielcd_init_global(struct s3cfb_global *ctrl)
 {
 	unsigned int cfg;
 
+	if (fimd_power_off) BUG();
 	*ielcd_fbdev = *ctrl;
 	ielcd_fbdev->regs = s3c_ielcd_base;
 

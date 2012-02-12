@@ -32,7 +32,7 @@
 #include <linux/cm3663.h>
 
 #define LIGHT_BUFFER_NUM	5
-#define PROX_READ_NUM		40
+#define PROX_READ_NUM	40
 
 /* ADDSEL is LOW */
 #define REGS_ARA		0x18
@@ -52,6 +52,47 @@
 
 extern unsigned int system_rev;
 
+int proximity_power_state = 0;	
+int proximity_approach_state = 0;
+
+#endif
+
+
+/* ------------------- Light Sensor Latency Control by Xtopher   ------------------*/
+#ifdef FEATURE_ALS_LATENCY_CONTROL
+// Referance from  LightSensor.cpp (  indexToValue )
+typedef enum
+{
+    AUTOBRIGHT_OFF,
+    AUTOBRIGHT_LL = 15,
+    AUTOBRIGHT_LM = 121,
+    AUTOBRIGHT_MM = 1401,
+    AUTOBRIGHT_MH = 15001,
+    AUTOBRIGHT_HH = 150000,
+    AUTOBRIGHT_ON,
+} AutoLcdBacklightEnum;
+
+
+typedef enum
+{
+    ALSTrh_LUX_OFF,
+    ALSTrh_LUX_LOW,
+    ALSTrh_LUX_MID,
+    ALSTrh_LUX_HIGH,
+} AlsTresholdEnum;
+
+int lastIllum = AUTOBRIGHT_MM;
+int currentIllum =AUTOBRIGHT_MM;
+int AlsStableCheckCount = 0;
+int als_avgvalue = 0;
+
+#define ALSSTABLETRH        20 // 5 -> 4     // 4S
+#define AUTOBRIGHTSTEP      10
+#define AUTOBRIGHTINTERVAL  50     // 350ms   within 4s 
+#endif
+/* ------------------- Light Sensor Latency Control by Xtopher   ------------------*/
+
+
 enum {
 	ALS_ARA,
 	ALS_CMD,
@@ -62,7 +103,6 @@ enum {
 	PS_DATA,
 	PS_THD,
 };
-#endif
 
 static u8 reg_defaults[8] = {
 	0x00, /* ARA: read only register */
@@ -174,6 +214,25 @@ int cm3663_i2c_write(struct cm3663_data *cm3663, u8 addr, u8 val)
 	return err;
 }
 
+
+#ifdef CONFIG_TARGET_LOCALE_KOR		// Xtopher
+int get_proximity_activation_state(void)
+{
+	return proximity_power_state;
+}
+
+int get_proximity_approach_state(void)
+{
+	return proximity_approach_state;
+}
+
+EXPORT_SYMBOL(get_proximity_activation_state);
+EXPORT_SYMBOL(get_proximity_approach_state);
+#endif
+
+
+
+
 static void cm3663_light_enable(struct cm3663_data *cm3663)
 {
 	u8 tmp;
@@ -194,6 +253,101 @@ static void cm3663_light_disable(struct cm3663_data *cm3663)
 	hrtimer_cancel(&cm3663->light_timer);
 	cancel_work_sync(&cm3663->work_light);
 }
+
+
+/* ------------------- Light Sensor Latency Control by Xtopher   ------------------*/
+#ifdef FEATURE_ALS_LATENCY_CONTROL
+int get_IlluminationState(int als_rawdata)
+{
+    int illumination;
+
+
+	if ( als_rawdata <= AUTOBRIGHT_LL ) 
+		illumination = AUTOBRIGHT_LL - 5;
+	else if (AUTOBRIGHT_LL <  als_rawdata  &&  als_rawdata <= AUTOBRIGHT_LM ) 
+		illumination = AUTOBRIGHT_LM - 10;
+	else if (AUTOBRIGHT_LM <  als_rawdata  &&  als_rawdata <= AUTOBRIGHT_MM ) 
+		illumination = AUTOBRIGHT_MM - 50;
+	else if (AUTOBRIGHT_MM <  als_rawdata  &&  als_rawdata <= AUTOBRIGHT_MH ) 
+		illumination = AUTOBRIGHT_MH - 50;
+	else if (AUTOBRIGHT_MH <  als_rawdata  &&  als_rawdata <= AUTOBRIGHT_HH ) 
+		illumination = AUTOBRIGHT_HH - 50;
+	else if (AUTOBRIGHT_HH <  als_rawdata )
+		illumination = AUTOBRIGHT_HH + 50;
+	else
+		illumination = AUTOBRIGHT_MM - 50;   /* Sensor Error Case */
+
+    return illumination;
+}
+
+static int lightsensor_get_raw_value(struct cm3663_data *cm3663)
+{
+	int i = 0;
+	int j = 0;
+	int value = 0;
+	int raw_value = 0;
+	int als_avr_value;
+	unsigned int als_total = 0;
+	unsigned int als_index = 0;
+	unsigned int als_max = 0;
+	unsigned int als_min = 0;
+	u8 als_high, als_low;
+
+	/* Verify power state of light sensor */
+	if (!(cm3663->power_state & LIGHT_ENABLED)) {
+		pr_err("%s: Light Sensor was disabled by logic, "
+			"cm3663->power_state = 0x%x\n",
+			__func__, cm3663->power_state);
+
+		cm3663_light_enable(cm3663);
+		cm3663->power_state |= LIGHT_ENABLED;
+	}
+
+	/* get ALS */
+	cm3663_i2c_read(cm3663, REGS_ALS_LSB, &als_low);
+	cm3663_i2c_read(cm3663, REGS_ALS_MSB, &als_high);
+
+	value = ((als_high << 8) | als_low) * 5;
+	raw_value = value;
+
+	/*----------------for debuging -----------------*/
+	als_index = (cm3663->als_index_count++) % ALS_BUFFER_NUM;
+
+	/*ALS buffer initialize (light sensor off ---> light sensor on) */
+	if (!cm3663->als_buf_initialized) {
+		cm3663->als_buf_initialized = true;
+		for (j = 0; j < ALS_BUFFER_NUM; j++)
+			cm3663->als_value_buf[j] = value;
+	} else
+		cm3663->als_value_buf[als_index] = value;
+
+	als_max = cm3663->als_value_buf[0];
+	als_min = cm3663->als_value_buf[0];
+
+	for (i = 0; i < ALS_BUFFER_NUM; i++) {
+		als_total += cm3663->als_value_buf[i];
+
+		if (als_max < cm3663->als_value_buf[i])
+			als_max = cm3663->als_value_buf[i];
+
+		if (als_min > cm3663->als_value_buf[i])
+			als_min = cm3663->als_value_buf[i];
+	}
+	als_avr_value = (als_total-(als_max+als_min))/(ALS_BUFFER_NUM-2);
+
+	if (cm3663->als_index_count == ALS_BUFFER_NUM-1)
+		cm3663->als_index_count = 0;
+
+	als_avgvalue = als_avr_value;
+	/*----------------for debuging -----------------*/
+
+	return raw_value;
+}
+
+#endif
+/* ------------------- Light Sensor Latency Control by Xtopher   ------------------*/
+
+
 
 static int lightsensor_get_alsvalue(struct cm3663_data *cm3663)
 {
@@ -281,7 +435,11 @@ static ssize_t lightsensor_file_state_show(struct device *dev,
 	if (!(cm3663->power_state & LIGHT_ENABLED))
 		cm3663_light_enable(cm3663);
 
+	#ifdef FEATURE_ALS_LATENCY_CONTROL
+	adc = als_avgvalue;
+	#else
 	adc = lightsensor_get_alsvalue(cm3663);
+	#endif
 
 	if (!(cm3663->power_state & LIGHT_ENABLED))
 		cm3663_light_disable(cm3663);
@@ -394,12 +552,18 @@ static ssize_t proximity_enable_store(struct device *dev,
 		cm3663_i2c_write(cm3663, REGS_PS_CMD, reg_defaults[5]);
 		enable_irq(cm3663->irq);
 		enable_irq_wake(cm3663->irq);
+		#ifdef CONFIG_TARGET_LOCALE_KOR
+		proximity_power_state = 1;	// Xtopher
+		#endif
 	} else if (!new_value && (cm3663->power_state & PROXIMITY_ENABLED)) {
 		cm3663->power_state &= ~PROXIMITY_ENABLED;
 		disable_irq_wake(cm3663->irq);
 		disable_irq(cm3663->irq);
 		cm3663_i2c_write(cm3663, REGS_PS_CMD, 0x01);
 		cm3663->pdata->proximity_power(0);
+		#ifdef CONFIG_TARGET_LOCALE_KOR
+		proximity_power_state = 0;	// Xtopher
+		#endif
 	}
 	mutex_unlock(&cm3663->power_lock);
 	return size;
@@ -500,18 +664,18 @@ static void cm3663_work_func_light(struct work_struct *work)
 	for (i = 0; ARRAY_SIZE(adc_table); i++)
 		if (als <= adc_table[i])
 			break;
-
+   
 	if (cm3663->light_buffer == i) {
 		if (cm3663->light_count++ == LIGHT_BUFFER_NUM) {
 			input_report_abs(cm3663->light_input_dev,
 							ABS_MISC, als + 1);
-			input_sync(cm3663->light_input_dev);
+	input_sync(cm3663->light_input_dev);
 			cm3663->light_count = 0;
-		}
+        }
 	} else {
 		cm3663->light_buffer = i;
 		cm3663->light_count = 0;
-	}
+    }
 }
 
 static void cm3663_work_func_prox(struct work_struct *work)
@@ -559,6 +723,19 @@ irqreturn_t cm3663_irq_thread_fn(int irq, void *data)
 	/* for debugging : going to be removed */
 	cm3663_i2c_read(ip, REGS_PS_DATA, &tmp);
 	pr_err("%s: proximity value = %d, val = %d\n", __func__, tmp, val);
+
+	#ifdef CONFIG_TARGET_LOCALE_KOR
+	// Xtopher
+	if(val == 1)
+	{
+		proximity_approach_state = 0;
+	}
+	else 
+	{
+		proximity_approach_state = 1;
+	}
+	#endif
+
 
 	/* 0 is close, 1 is far */
 	input_report_abs(ip->proximity_input_dev, ABS_DISTANCE, val);

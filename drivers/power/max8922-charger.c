@@ -91,6 +91,8 @@ static int max8922_enable_charging(struct max8922_info *info, bool enable)
 	if (enable) {
 		if (info->is_usb_cable) {
 			/* Charging by USB cable */
+			gpio_direction_output(gpio_chg_en, GPIO_LEVEL_LOW);
+			mdelay(5);
 			gpio_direction_output(gpio_chg_en, GPIO_LEVEL_HIGH);
 		} else {
 			/* Charging by TA cable */

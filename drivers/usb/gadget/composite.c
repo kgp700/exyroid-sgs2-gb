@@ -382,36 +382,16 @@ static int config_buf(struct usb_configuration *config,
 #ifdef CONFIG_USB_ANDROID_SAMSUNG_COMPOSITE
 /* soonyong.cho : set interface number dynamically based on product function sequence. */
 	int i;
-	char **product_functions;
+	char **product_functions = config->cdev->products->functions;
 	int index_intf;
 	int change_intf;
-	int index_multi_conf = config->cdev->multi_configuration;
-
-	CSY_DBG("config_buf configuration=%d, index_multi_conf=%d\n",
-			config->bConfigurationValue, index_multi_conf);
-	if (index_multi_conf > 0)
-		CSY_DBG("multi configuration=%d\n", index_multi_conf);
-	if (config->cdev->products->multi_conf_functions
-			[index_multi_conf] != 0) {
-		product_functions = config->cdev->products->multi_conf_functions
-			[index_multi_conf];
-		CSY_DBG("set multi configuration=%d\n", index_multi_conf);
-	} else {
-		CSY_DBG("set single configuration=%d\n",
-				config->cdev->multi_configuration);
-		product_functions = config->cdev->products->functions;
-	}
 #endif
 	/* write the config descriptor */
 	c = buf;
 	c->bLength = USB_DT_CONFIG_SIZE;
 	c->bDescriptorType = type;
 	/* wTotalLength and bNumInterfaces are written later */
-#ifdef CONFIG_USB_ANDROID_SAMSUNG_COMPOSITE
-	c->bConfigurationValue = index_multi_conf + 1;
-#else
 	c->bConfigurationValue = config->bConfigurationValue;
-#endif
 	c->iConfiguration = config->iConfiguration;
 	c->bmAttributes = USB_CONFIG_ATT_ONE | config->bmAttributes;
 	c->bMaxPower = config->bMaxPower ? : (CONFIG_USB_GADGET_VBUS_DRAW / 2);
@@ -526,7 +506,7 @@ static int config_desc(struct usb_composite_dev *cdev, unsigned w_value)
 	u8				type = w_value >> 8;
 	enum usb_device_speed		speed = USB_SPEED_UNKNOWN;
 
-	CSY_DBG2("w_value = 0x%x\n", w_value);
+	CSY_DBG2("\n");
 	if (gadget_is_dualspeed(gadget)) {
 		int			hs = 0;
 
@@ -541,15 +521,6 @@ static int config_desc(struct usb_composite_dev *cdev, unsigned w_value)
 
 	/* This is a lookup by config *INDEX* */
 	w_value &= 0xff;
-#ifdef CONFIG_USB_ANDROID_SAMSUNG_COMPOSITE
-	cdev->multi_configuration = w_value;
-	if (w_value != 0) {
-		w_value = 0;
-		CSY_DBG("multi configuration = %d\n", w_value);
-	} else {
-		CSY_DBG("single configuration = %d\n", w_value);
-	}
-#endif
 	list_for_each_entry(c, &cdev->configs, list) {
 		/* ignore configs that won't work at this speed */
 		if (speed == USB_SPEED_HIGH) {
@@ -574,9 +545,8 @@ static int count_configs(struct usb_composite_dev *cdev, unsigned type)
 	struct usb_configuration	*c;
 	unsigned			count = 0;
 	int				hs = 0;
-#ifdef CONFIG_USB_ANDROID_SAMSUNG_COMPOSITE
-	int i;
-#endif
+
+	CSY_DBG2("\n");
 	if (gadget_is_dualspeed(gadget)) {
 		if (gadget->speed == USB_SPEED_HIGH)
 			hs = 1;
@@ -584,9 +554,6 @@ static int count_configs(struct usb_composite_dev *cdev, unsigned type)
 			hs = !hs;
 	}
 	list_for_each_entry(c, &cdev->configs, list) {
-		CSY_DBG2("%s :list usb_configuration=0x%p hs=%d,\
-				c->highspeed=%d, c->fullspeed=%d\n"
-				, __func__, c, hs, c->highspeed, c->fullspeed);
 		/* ignore configs that won't work at this speed */
 		if (hs) {
 			if (!c->highspeed)
@@ -597,30 +564,6 @@ static int count_configs(struct usb_composite_dev *cdev, unsigned type)
 		}
 		count++;
 	}
-
-#ifdef CONFIG_USB_ANDROID_SAMSUNG_COMPOSITE
-	c = list_entry((&cdev->configs)->next, typeof(*c), list);
-	if (c->cdev->products->multi_conf_functions[0] != 0) {
-		count = 0;
-		if (hs) {
-			if (!c->highspeed)
-				return 1;
-		} else {
-			if (!c->fullspeed)
-				return 1;
-		}
-
-		for (i = 0; i < MAX_MULTI_CONFIGURATION; i++) {
-			if (cdev->products->multi_conf_functions[i] != 0) {
-				CSY_DBG("multi configuration=0x%p\n",
-					cdev->products->multi_conf_functions
-					[i]);
-				count++;
-			}
-		}
-	}
-	CSY_DBG("count config=%d\n", count);
-#endif
 	return count;
 }
 
@@ -668,7 +611,7 @@ static int set_config(struct usb_composite_dev *cdev,
 	unsigned		power = gadget_is_otg(gadget) ? 8 : 100;
 	int			tmp;
 
-	CSY_DBG2("number = %d\n", number);
+	CSY_DBG2("\n");
 	if (cdev->config)
 		reset_config(cdev);
 
@@ -678,12 +621,6 @@ static int set_config(struct usb_composite_dev *cdev,
 				result = 0;
 				break;
 			}
-#ifdef CONFIG_USB_ANDROID_SAMSUNG_COMPOSITE
-			if (cdev->multi_configuration == (number - 1)) {
-				result = 0;
-				break;
-			}
-#endif
 		}
 		if (result < 0)
 			goto done;
@@ -704,8 +641,6 @@ static int set_config(struct usb_composite_dev *cdev,
 
 	cdev->config = c;
 
-	CSY_DBG2("Initialize all interface c(0x%p)->bConfigurationValue=%d\n",
-			c, c->bConfigurationValue);
 	/* Initialize all interfaces by setting them to altsetting zero. */
 	for (tmp = 0; tmp < MAX_CONFIG_INTERFACES; tmp++) {
 		struct usb_function	*f = c->interface[tmp];
@@ -806,7 +741,6 @@ int usb_add_config(struct usb_composite_dev *cdev,
 	if (status < 0) {
 		list_del(&config->list);
 		config->cdev = NULL;
-		CSY_DBG("cfg->bind ret= 0x%x\n", status);
 	} else {
 		unsigned	i;
 
@@ -1128,10 +1062,6 @@ composite_setup(struct usb_gadget *gadget, const struct usb_ctrlrequest *ctrl)
 			cdev->desc.bNumConfigurations =
 				count_configs(cdev, USB_DT_DEVICE);
 			value = min(w_length, (u16) sizeof cdev->desc);
-			CSY_DBG(
-			"cdev->desc.nNumConfigurations=%d,w_l=%d,v=%d\n",
-				cdev->desc.bNumConfigurations,
-				w_length, value);
 			memcpy(req->buf, &cdev->desc, value);
 			break;
 		case USB_DT_DEVICE_QUALIFIER:
@@ -1148,10 +1078,8 @@ composite_setup(struct usb_gadget *gadget, const struct usb_ctrlrequest *ctrl)
 				break;
 			/* FALLTHROUGH */
 		case USB_DT_CONFIG:
+			CSY_DBG_ESS("GET_DES-CON\n");
 			value = config_desc(cdev, w_value);
-			CSY_DBG(
-			"GET_DES-CON w_value=%d, value=%d, w_length=%d\n",
-				w_value, value, w_length);
 			if (value >= 0)
 				value = min(w_length, (u16) value);
 			break;
@@ -1202,11 +1130,7 @@ composite_setup(struct usb_gadget *gadget, const struct usb_ctrlrequest *ctrl)
 		if (ctrl->bRequestType != USB_DIR_IN)
 			goto unknown;
 		if (cdev->config) {
-#ifdef CONFIG_USB_ANDROID_SAMSUNG_COMPOSITE
-			*(u8 *)req->buf = cdev->multi_configuration + 1;
-#else
 			*(u8 *)req->buf = cdev->config->bConfigurationValue;
-#endif
 			value = min(w_length, (u16) 1);
 		} else
 			*(u8 *)req->buf = 0;
@@ -1313,7 +1237,6 @@ unknown:
 			struct usb_configuration        *cfg;
 
 			list_for_each_entry(cfg, &cdev->configs, list) {
-
 				if (cfg && cfg->setup) {
 					CSY_DBG("vendor request is not processed :cfg->setup()\n");
 					value = cfg->setup(cfg, ctrl);
@@ -1529,6 +1452,14 @@ static int composite_bind(struct usb_gadget *gadget)
 	 */
 	usb_ep_autoconfig_reset(cdev->gadget);
 
+	/* standardized runtime overrides for device ID data */
+	if (idVendor)
+		cdev->desc.idVendor = cpu_to_le16(idVendor);
+	if (idProduct)
+		cdev->desc.idProduct = cpu_to_le16(idProduct);
+	if (bcdDevice)
+		cdev->desc.bcdDevice = cpu_to_le16(bcdDevice);
+
 	/* composite gadget needs to assign strings for whole device (like
 	 * serial number), register function drivers, potentially update
 	 * power state and consumption, etc
@@ -1545,14 +1476,6 @@ static int composite_bind(struct usb_gadget *gadget)
 
 	cdev->desc = *composite->dev;
 	cdev->desc.bMaxPacketSize0 = gadget->ep0->maxpacket;
-
-	/* standardized runtime overrides for device ID data */
-	if (idVendor)
-		cdev->desc.idVendor = cpu_to_le16(idVendor);
-	if (idProduct)
-		cdev->desc.idProduct = cpu_to_le16(idProduct);
-	if (bcdDevice)
-		cdev->desc.bcdDevice = cpu_to_le16(bcdDevice);
 
 	/* strings can't be assigned before bind() allocates the
 	 * releavnt identifiers

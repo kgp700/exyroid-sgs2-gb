@@ -17,7 +17,7 @@ struct tmu_data {
 	char	te1;			/* e-fused temperature for 25 */
 	char	te2;			/* e-fused temperature for 85 */
 	int	cooling;
-	int	mode;			/* compensation mode */
+	int				mode;			/* compensation mode */
 	int	tmu_flag;
 };
 

@@ -2194,6 +2194,10 @@ static int pfkey_spdadd(struct sock *sk, struct sk_buff *skb, struct sadb_msg *h
 	xp->selector.sport = ((struct sockaddr_in *)(sa+1))->sin_port;
 	if (xp->selector.sport)
 		xp->selector.sport_mask = htons(0xffff);
+	
+#if 1 // IWLAN 
+	xp->selector.sport_end = sa->sadb_address_reserved; 
+#endif
 
 	sa = ext_hdrs[SADB_EXT_ADDRESS_DST-1],
 	pfkey_sadb_addr2xfrm_addr(sa, &xp->selector.daddr);
@@ -2207,6 +2211,10 @@ static int pfkey_spdadd(struct sock *sk, struct sk_buff *skb, struct sadb_msg *h
 	xp->selector.dport = ((struct sockaddr_in *)(sa+1))->sin_port;
 	if (xp->selector.dport)
 		xp->selector.dport_mask = htons(0xffff);
+	
+#if 1 // IWLAN 
+	xp->selector.dport_end = sa->sadb_address_reserved;
+#endif
 
 	sec_ctx = (struct sadb_x_sec_ctx *) ext_hdrs[SADB_X_EXT_SEC_CTX-1];
 	if (sec_ctx != NULL) {

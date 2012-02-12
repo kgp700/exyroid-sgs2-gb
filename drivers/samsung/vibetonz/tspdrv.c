@@ -104,17 +104,14 @@ static int g_nMajor;
 #endif
 
 /* timed_output */
-#ifndef CONFIG_TARGET_LOCALE_NA
+#if 1
 #define VIBRATOR_PERIOD	38022	/* 128 * 205 = 26.240 */
 #else
-#define VIBRATOR_PERIOD	44643	/* 128 * 175 = 22.4KHz */
+#define VIBRATOR_PERIOD	22400	/* 128 * 207 = 26.496 */
 #endif
 
-#ifdef CONFIG_TARGET_LOCALE_NA
-#define VIBRATOR_DUTY		40178	/* 90% of period */
-#else
 #define VIBRATOR_DUTY	34220
-#endif /* CONFIG_TARGET_LOCALE_NA */
+
 
 static void _set_vibetonz_work(struct work_struct *unused);
 
@@ -147,7 +144,7 @@ static int set_vibetonz(int timeout)
 			regulator = regulator_get(NULL, "vmotor");
 
 			if (IS_ERR(regulator)) {
-				DbgOut((KERN_ERR "Failed to get vmoter regulator.\n"));
+				DbgOut((KERN_ERR"Failed to get vmoter regulator.\n"));
 				return 0;
 			}
 
@@ -155,7 +152,6 @@ static int set_vibetonz(int timeout)
 			regulator_put(regulator);
 
 			regulator_hapticmotor_enabled = 0;
-
 			DbgOut((KERN_INFO "tspdrv: DISABLE\n"));
 			wake_unlock(&vib_wake_lock);
 		}
@@ -168,7 +164,7 @@ static int set_vibetonz(int timeout)
 		regulator = regulator_get(NULL, "vmotor");
 
 		if (IS_ERR(regulator)) {
-			DbgOut((KERN_ERR "Failed to get vmoter regulator.\n"));
+			DbgOut((KERN_ERR"Failed to get vmoter regulator.\n"));
 			return 0;
 		}
 
@@ -176,13 +172,10 @@ static int set_vibetonz(int timeout)
 		regulator_put(regulator);
 
 		regulator_hapticmotor_enabled = 1;
-
 		DbgOut((KERN_INFO "tspdrv: ENABLE\n"));
 	}
 
 	vibrator_value = timeout;
-
-	printk(KERN_DEBUG "tspdrv: %s (%d)\n", __func__, regulator_hapticmotor_enabled);
 
 	return 0;
 }
@@ -223,7 +216,7 @@ static int get_time_for_vibetonz(struct timed_output_dev *dev)
 
 static void enable_vibetonz_from_user(struct timed_output_dev *dev, int value)
 {
-	printk(KERN_DEBUG "tspdrv: Enable time = %d msec\n", value);
+	printk(KERN_DEBUG "[VIBETONZ] %s : time = %d msec\n", __func__, value);
 	hrtimer_cancel(&timer);
 
 	/* set_vibetonz(value); */

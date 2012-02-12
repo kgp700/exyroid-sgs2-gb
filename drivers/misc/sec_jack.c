@@ -38,7 +38,7 @@
 
 #define MAX_ZONE_LIMIT		10
 /* keep this value if you support double-pressed concept */
-#define SEND_KEY_CHECK_TIME_MS	40		/* 100ms */
+#define SEND_KEY_CHECK_TIME_MS	20		/* 100ms */
 #define WAKE_LOCK_TIME		(HZ * 5)	/* 5 sec */
 #define EAR_CHECK_LOOP_CNT	10
 
@@ -266,6 +266,8 @@ static void sec_jack_set_type(struct sec_jack_info *hi, int jack_type)
 
 static void handle_jack_not_inserted(struct sec_jack_info *hi)
 {
+	struct sec_jack_platform_data *pdata = hi->pdata;
+
 	sec_jack_set_type(hi, SEC_JACK_NO_DEVICE);
 	hi->pdata->set_micbias_state(false);
 }
@@ -298,9 +300,6 @@ static void determine_jack_type(struct sec_jack_info *hi)
 		for (i = 0; i < size; i++) {
 			if (adc <= zones[i].adc_high) {
 				if (++count[i] > zones[i].check_count) {
-					#ifdef CONFIG_TARGET_LOCALE_NTT
-					pr_info("%s : to set type,last read adc=%d\n", __func__, adc);
-					#endif
 					sec_jack_set_type(hi, zones[i].jack_type);
 					return;
 				}
@@ -375,6 +374,9 @@ void sec_jack_buttons_work(struct work_struct *work)
 	struct sec_jack_buttons_zone *btn_zones = pdata->buttons_zones;
 	int adc;
 	int i;
+
+	/* prevent suspend to allow user space to respond to switch */
+	wake_lock_timeout(&hi->det_wake_lock, WAKE_LOCK_TIME);
 
 	/* when button is released */
 	if (hi->pressed == 0) {

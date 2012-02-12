@@ -23,8 +23,8 @@ struct ld9040_panel_data {
 	const unsigned short *seq_pwrctl_set;
 	const unsigned short *seq_pwrctl_set_sm2_a2;
 	const unsigned short *seq_gamma_set1;
-	const unsigned short *seq_sm2_gamma_set1;
-	const unsigned short *seq_sm2_gamma_set2;
+	const unsigned short *seq_sm2_gamma_set1;  
+	const unsigned short *seq_sm2_gamma_set2;  
 	const unsigned short *display_on;
 	const unsigned short *display_off;
 	const unsigned short *sleep_in;
@@ -33,13 +33,13 @@ struct ld9040_panel_data {
 	const unsigned short *gamma_ctrl;
 	const unsigned short **gamma19_table;
 	const unsigned short **gamma22_table;
-	const unsigned short **gamma_sm2_a1_19_table;
-	const unsigned short **gamma_sm2_a1_22_table;
-	const unsigned short **gamma_sm2_a2_19_table;
-	const unsigned short **gamma_sm2_a2_22_table;
+	const unsigned short **gamma_sm2_a1_19_table;  
+	const unsigned short **gamma_sm2_a1_22_table;  
+	const unsigned short **gamma_sm2_a2_19_table;  
+	const unsigned short **gamma_sm2_a2_22_table;  
 	const unsigned short **acl_table;
 	const unsigned short **elvss_table;
-	const unsigned short **elvss_sm2_table;
+	const unsigned short **elvss_sm2_table; 
 	const unsigned short *acl_on;
 	const unsigned short *elvss_on;
 	int gamma_table_size;
@@ -48,3 +48,4 @@ struct ld9040_panel_data {
 #define	LCDTYPE_M2		(1)
 #define	LCDTYPE_SM2_A1		(0)
 #define	LCDTYPE_SM2_A2		(2)
+

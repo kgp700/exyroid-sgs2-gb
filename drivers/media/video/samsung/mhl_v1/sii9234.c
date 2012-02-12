@@ -1,9 +1,8 @@
-
 /***************************************************************************
 
-* 
+*
 
-*   SiI9244 - MHL Transmitter Driver
+*   SiI9244 ? MHL Transmitter Driver
 
 *
 
@@ -19,7 +18,7 @@
 
 *
 
-* This program is distributed ¡°as is¡± WITHOUT ANY WARRANTY of any
+* This program is distributed ¢®¡Æas is¢®¡¾ WITHOUT ANY WARRANTY of any
 
 * kind, whether express or implied; without even the implied warranty
 
@@ -30,6 +29,7 @@
 *
 
 *****************************************************************************/
+
 
 #include <linux/interrupt.h>
 #include <linux/irq.h>

@@ -45,6 +45,8 @@
 
 #define MAX17042_BATTERY_FULL		95
 
+#define MAX17042_NEW_RCOMP		0x0065
+
 struct max17042_reg_data {
 	u8 reg_addr;
 	u8 reg_data1;

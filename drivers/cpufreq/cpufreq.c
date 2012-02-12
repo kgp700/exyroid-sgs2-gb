@@ -28,7 +28,6 @@
 #include <linux/cpu.h>
 #include <linux/completion.h>
 #include <linux/mutex.h>
-#include <linux/earlysuspend.h>
 
 #define dprintk(msg...) cpufreq_debug_printk(CPUFREQ_DEBUG_CORE, \
 						"cpufreq-core", msg)
@@ -1038,17 +1037,6 @@ static int cpufreq_add_dev(struct sys_device *sys_dev)
 		dprintk("initialization failed\n");
 		goto err_unlock_policy;
 	}
-#ifdef CONFIG_HOTPLUG_CPU
-	for_each_online_cpu(sibling) {
-		struct cpufreq_policy *cp = per_cpu(cpufreq_cpu_data, sibling);
-		if (cp && cp->governor &&
-		    (cpumask_test_cpu(cpu, cp->related_cpus))) {
-			policy->min = cp->min;
-			policy->max = cp->max;
-			break;
-		}
-	}
-#endif
 	policy->user_policy.min = policy->min;
 	policy->user_policy.max = policy->max;
 
@@ -1217,28 +1205,12 @@ static int __cpufreq_remove_dev(struct sys_device *sys_dev)
 		cpufreq_driver->exit(data);
 	unlock_policy_rwsem_write(cpu);
 
-	cpufreq_debug_enable_ratelimit();
-
-#ifdef CONFIG_HOTPLUG_CPU
-	/* when the CPU which is the parent of the kobj is hotplugged
-	 * offline, check for siblings, and create cpufreq sysfs interface
-	 * and symlinks
-	 */
-	if (unlikely(cpumask_weight(data->cpus) > 1)) {
-		/* first sibling now owns the new sysfs dir */
-		cpumask_clear_cpu(cpu, data->cpus);
-		cpufreq_add_dev(get_cpu_sysdev(cpumask_first(data->cpus)));
-
-		/* finally remove our own symlink */
-		lock_policy_rwsem_write(cpu);
-		__cpufreq_remove_dev(sys_dev);
-	}
-#endif
-
 	free_cpumask_var(data->related_cpus);
 	free_cpumask_var(data->cpus);
 	kfree(data);
+	per_cpu(cpufreq_cpu_data, cpu) = NULL;
 
+	cpufreq_debug_enable_ratelimit();
 	return 0;
 }
 
@@ -2014,88 +1986,6 @@ int cpufreq_unregister_driver(struct cpufreq_driver *driver)
 }
 EXPORT_SYMBOL_GPL(cpufreq_unregister_driver);
 
-static int cpufreq_scaling_disabled;
-
-module_param(cpufreq_scaling_disabled, uint, 0644);
-MODULE_PARM_DESC(debug, "CPUfreq: "
-	"disable frequency range regulation based on screen on/off events");
-
-static unsigned int
-evaluate_cpu_freq(struct cpufreq_policy *policy, unsigned int base)
-{
-	struct cpufreq_frequency_table *freq_table;
-	unsigned int index = 0;
-
-	freq_table = cpufreq_frequency_get_table(policy->cpu);
-	if (unlikely(!freq_table))
-		return 0;
-	cpufreq_frequency_table_target(policy, freq_table, base,
-			CPUFREQ_RELATION_H, &index);
-
-	return freq_table[index].frequency;
-}
-
-static void powersave_early_suspend(struct early_suspend *handler)
-{
-	int cpu;
-
-	if (cpufreq_scaling_disabled)
-		return;
-	for_each_online_cpu(cpu) {
-		struct cpufreq_policy *cpu_policy, new_policy;
-
-		cpu_policy = cpufreq_cpu_get(cpu);
-		if (!cpu_policy)
-			continue;
-		if (cpufreq_get_policy(&new_policy, cpu))
-			goto out;
-		new_policy.max = evaluate_cpu_freq(cpu_policy,
-					cpu_policy->cpuinfo.max_freq >> 1);
-		new_policy.min = cpu_policy->cpuinfo.min_freq;
-		printk(KERN_INFO
-			"%s: set cpu%d freq in the %u-%u KHz range\n",
-			__func__, cpu, new_policy.min, new_policy.max);
-		__cpufreq_set_policy(cpu_policy, &new_policy);
-		cpu_policy->user_policy.policy = cpu_policy->policy;
-		cpu_policy->user_policy.governor = cpu_policy->governor;
-out:
-		cpufreq_cpu_put(cpu_policy);
-	}
-}
-
-static void powersave_late_resume(struct early_suspend *handler)
-{
-	int cpu;
-
-	if (cpufreq_scaling_disabled)
-		return;
-	for_each_online_cpu(cpu) {
-		struct cpufreq_policy *cpu_policy, new_policy;
-
-		cpu_policy = cpufreq_cpu_get(cpu);
-		if (!cpu_policy)
-			continue;
-		if (cpufreq_get_policy(&new_policy, cpu))
-			goto out;
-		new_policy.max = cpu_policy->user_policy.max;
-		new_policy.min = cpu_policy->user_policy.min;
-		printk(KERN_INFO
-			"%s: set cpu%d freq in the %u-%u KHz range\n",
-			__func__, cpu, new_policy.min, new_policy.max);
-		__cpufreq_set_policy(cpu_policy, &new_policy);
-		cpu_policy->user_policy.policy = cpu_policy->policy;
-		cpu_policy->user_policy.governor = cpu_policy->governor;
-out:
-		cpufreq_cpu_put(cpu_policy);
-	}
-}
-
-static struct early_suspend _powersave_early_suspend = {
-	.suspend = powersave_early_suspend,
-	.resume = powersave_late_resume,
-	.level = EARLY_SUSPEND_LEVEL_BLANK_SCREEN,
-};
-
 static int __init cpufreq_core_init(void)
 {
 	int cpu;
@@ -2109,7 +1999,6 @@ static int __init cpufreq_core_init(void)
 						&cpu_sysdev_class.kset.kobj);
 	BUG_ON(!cpufreq_global_kobject);
 
-	register_early_suspend(&_powersave_early_suspend);
 	return 0;
 }
 core_initcall(cpufreq_core_init);

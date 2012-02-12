@@ -70,8 +70,8 @@
 	#define _OBUF0_OFFSET_AB_	(0x0A000)
 	#define _OBUF1_OFFSET_AB_	(0x15000)
 	#define _OBUF_SIZE_C_		(4608 * 2)	/* 2Frames */
-	#define _OBUF0_OFFSET_C_	(0x19000)
-	#define _OBUF1_OFFSET_C_	(0x1C800)
+	#define _OBUF0_OFFSET_C_	(0x19800)
+	#define _OBUF1_OFFSET_C_	(0x1CC00)
 
 	#define _VLIW_SIZE_		(128 * 1024)	/* 128KBytes */
 	#define _DATA_SIZE_		(128 * 1024)	/* 128KBytes */
@@ -400,7 +400,6 @@ static void s5p_rp_check_stream_info(void)
 		s5p_rp.channel &= RP_ARM_INTR_CODE_CHINF_MASK;
 		if (s5p_rp.channel) {
 			s5pdbg("Channel = %lu\n", s5p_rp.channel);
-			printk(KERN_INFO "S5P_RP: Channel = %lu\n", s5p_rp.channel);
 		}
 	}
 
@@ -426,7 +425,6 @@ static void s5p_rp_check_stream_info(void)
 		}
 		if (s5p_rp.frame_size) {
 			s5pdbg("Frame size = %lu\n", s5p_rp.frame_size);
-			printk(KERN_INFO "S5P_RP: Frame size = %lu\n", s5p_rp.frame_size);
 		}
 	}
 }
@@ -503,7 +501,6 @@ static void s5p_rp_pause_request(void)
 	s5pdbg("Pause requsted\n");
 	if (!s5p_rp_is_running) {
 		s5pdbg("Pause ignored\n");
-		printk(KERN_INFO "S5P_RP: Pause ignored (rp is not running)\n");
 		return;
 	}
 
@@ -805,7 +802,6 @@ static ssize_t s5p_rp_write(struct file *file, const char *buffer,
 	if (s5p_rp.decoding_started &&
 		(!s5p_rp_is_running || s5p_rp.auto_paused)) {
 		s5pdbg("Resume RP\n");
-		printk(KERN_INFO "S5P_RP: Resume RP\n");
 		s5p_rp_flush_obuf();
 		s5p_rp_continue();
 		s5p_rp_is_running = 1;
@@ -877,7 +873,6 @@ static ssize_t s5p_rp_write(struct file *file, const char *buffer,
 #endif
 		if (!s5p_rp.decoding_started) {
 			s5pdbg("Start RP decoding!!\n");
-			printk(KERN_INFO "S5P_RP: Start RP decoding!!\n");
 			writel(0x00000000, s5p_rp.commbox + RP_PENDING);
 			s5p_rp_is_running = 1;
 			s5p_rp.decoding_started = 1;
@@ -943,8 +938,6 @@ static int s5p_rp_ioctl(struct inode *inode, struct file *file,
 		if ((val >= 4*1024) && (val <= _IBUF_SIZE_)) {
 			s5pdbg("Init, IBUF size [%ld], OBUF size [%ld]\n",
 				val, s5p_rp.obuf_size);
-			printk(KERN_INFO "S5P_RP: Init, IBUF size [%ld], OBUF size [%ld]\n",
-				val, s5p_rp.obuf_size);
 			s5p_rp.ibuf_size = val;
 			s5p_rp_flush_ibuf();
 			s5p_rp_reset();
@@ -957,14 +950,12 @@ static int s5p_rp_ioctl(struct inode *inode, struct file *file,
 
 	case S5P_RP_DEINIT:
 		s5pdbg("Deinit\n");
-		printk(KERN_INFO "S5P_RP: Deinit\n");
 		writel(0x00000001, s5p_rp.commbox + RP_PENDING);
 		s5p_rp_is_running = 0;
 		break;
 
 	case S5P_RP_PAUSE:
 		s5pdbg("Pause\n");
-		printk(KERN_INFO "S5P_RP: Pause\n");
 #ifdef _USE_EOS_TIMEOUT_
 		s5p_rp.timeout_eos_enabled = 0;
 #endif
@@ -973,7 +964,6 @@ static int s5p_rp_ioctl(struct inode *inode, struct file *file,
 
 	case S5P_RP_STOP:
 		s5pdbg("Stop\n");
-		printk(KERN_INFO "S5P_RP: Stop\n");
 		s5p_rp_stop();
 		s5p_rp_is_running = 0;
 		s5p_rp.decoding_started = 0;
@@ -982,7 +972,6 @@ static int s5p_rp_ioctl(struct inode *inode, struct file *file,
 	case S5P_RP_FLUSH:
 		/* Do not change s5p_rp_is_running state during flush */
 		s5pdbg("Flush\n");
-		printk(KERN_INFO "S5P_RP: Flush\n");
 		s5p_rp_stop();
 		s5p_rp_flush_ibuf();
 		s5p_rp_set_default_fw();
@@ -1003,7 +992,6 @@ static int s5p_rp_ioctl(struct inode *inode, struct file *file,
 				s5p_rp_write_last();	/* Fill one more IBUF */
 
 			s5pdbg("Start RP decoding!!\n");
-			printk(KERN_INFO "S5P_RP: Start RP decoding!!\n");
 			writel(0x00000000, s5p_rp.commbox + RP_PENDING);
 			s5p_rp_is_running = 1;
 			s5p_rp.wait_for_eos = 1;
@@ -1017,7 +1005,6 @@ static int s5p_rp_ioctl(struct inode *inode, struct file *file,
 
 	case S5P_RP_RESUME_EOS:
 		s5pdbg("Resume after EOS pause\n");
-		printk(KERN_INFO "S5P_RP: Resume after EOS pause\n");
 		s5p_rp_flush_obuf();
 		s5p_rp_continue();
 		s5p_rp_is_running = 1;
@@ -1215,7 +1202,7 @@ static irqreturn_t s5p_rp_irq(int irqno, void *dev_id)
 
 	if (irq_code & (RP_INTR_CODE_PLAYDONE | RP_INTR_CODE_ERROR)) {
 		s5pdbg("Stop at EOS\n");
-		s5p_rp_is_running = 0;
+/*		s5p_rp_is_running = 0;	leave rp-state as running */
 		s5pdbg("Total decoded: %ld frames (RP_read:%08X)\n",
 			s5p_rp_get_frame_counter(),
 			readl(s5p_rp.commbox + RP_READ_BITSTREAM_SIZE));
@@ -1290,7 +1277,6 @@ static int s5p_rp_ctrl_ioctl(struct inode *inode, struct file *file,
 	switch (cmd) {
 	case S5P_RP_CTRL_SET_GAIN:
 		s5pdbg("CTRL: Gain [0x%08lX]\n", arg);
-		printk(KERN_INFO "S5P_RP: CTRL: Gain [0x%08lX]\n", arg);
 		s5p_rp.gain = arg;
 		if (s5p_rp_is_opened)		/* Change gain immediately */
 			s5p_rp_set_gain_apply();
@@ -1306,8 +1292,6 @@ static int s5p_rp_ctrl_ioctl(struct inode *inode, struct file *file,
 			s5p_rp.gain_subr = 100;
 
 		s5pdbg("CTRL: Gain sub [L:%03ld, R:%03ld]\n",
-			s5p_rp.gain_subl, s5p_rp.gain_subr);
-		printk(KERN_INFO "S5P_RP: CTRL: Gain sub [L:%03ld, R:%03ld]\n",
 			s5p_rp.gain_subl, s5p_rp.gain_subr);
 		if (s5p_rp_is_opened)		/* Change gain immediately */
 			s5p_rp_set_gain_apply();
@@ -1631,7 +1615,6 @@ static struct miscdevice s5p_rp_ctrl_miscdev = {
 void s5p_rp_early_suspend(struct early_suspend *h)
 {
 	s5pdbg("early_suspend\n");
-	printk(KERN_INFO "S5P_RP: early_suspend\n");
 
 	s5p_rp.early_suspend_entered = 1;
 	if (s5p_rp_is_running) {
@@ -1643,7 +1626,6 @@ void s5p_rp_early_suspend(struct early_suspend *h)
 void s5p_rp_late_resume(struct early_suspend *h)
 {
 	s5pdbg("late_resume\n");
-	printk(KERN_INFO "S5P_RP: late_resume\n");
 
 	s5p_rp.early_suspend_entered = 0;
 

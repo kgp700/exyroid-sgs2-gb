@@ -184,6 +184,16 @@ int xfrm_output(struct sk_buff *skb)
 	struct net *net = dev_net(skb_dst(skb)->dev);
 	int err;
 
+#if 1 // IWLAN 
+	struct inet_sock *inet = skb->sk ? inet_sk(skb->sk) : NULL; 
+	u32 mtu = (inet && inet->pmtudisc == IP_PMTUDISC_PROBE) ? 
+		skb_dst(skb)->dev->mtu : dst_mtu(skb_dst(skb)); 
+	extern int ip_fragment_xfrm(struct sk_buff *skb, int (*output)(struct sk_buff *), int mtu_sub); 
+
+	if (skb->len > mtu - 80 && !skb_is_gso(skb)) 
+		return ip_fragment_xfrm(skb, xfrm_output,80);
+#endif
+
 	if (skb_is_gso(skb))
 		return xfrm_output_gso(skb);
 

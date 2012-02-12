@@ -20,6 +20,19 @@
 #include <linux/mfd/max8997-private.h>
 #include <linux/delay.h>
 
+//esper add for flash led
+#define DETECT_FLED_FAULT
+#ifdef DETECT_FLED_FAULT
+#define FLED1_FLT_BIT	(1<<0)
+#define FLED2_FLT_BIT	(1<<1)
+#define FLED_FLT_MASK	(FLED1_FLT_BIT | FLED2_FLT_BIT)
+static u8 fled_status;
+
+extern struct class *sec_class;
+struct device *fled_dev;
+#endif
+//esper end
+
 struct max8997_irq_data {
 	int reg;
 	int mask;
@@ -253,7 +266,6 @@ static irqreturn_t max8997_irq_thread(int irq, void *data)
 	dev_info(max8997->dev, "%s: irq:%d, irq_src:0x%x\n", __func__,
 			irq, irq_src);
 
-
 	for (i = 0; i < MAX8997_NUM_IRQ_REGS; i++)
 		irq_reg[i] = 0x0;
 
@@ -268,8 +280,14 @@ static irqreturn_t max8997_irq_thread(int irq, void *data)
 		ret = max8997_read_reg(max8997->i2c, MAX8997_REG_FLASH_STATUS,
 				&irq_flash);
 		if (!ret)
+		{
 			dev_info(max8997->dev, "%s: FLASH Interrupt: 0x%02x\n",
 					__func__, irq_flash);
+#ifdef DETECT_FLED_FAULT
+			fled_status = irq_flash & FLED_FLT_MASK;
+			printk(KERN_ERR "%s: fled_status: 0x%02x\n",__func__, fled_status);
+#endif
+		}
 	} else if (irq_src & MAX8997_INTR_FUELGAUGE_MASK) {
 		dev_warn(max8997->dev, "%s: Fuel Gauge interrupt\n", __func__);
 		msleep(10);
@@ -297,6 +315,33 @@ static irqreturn_t max8997_irq_thread(int irq, void *data)
 
 	return IRQ_HANDLED;
 }
+
+#ifdef DETECT_FLED_FAULT
+static ssize_t max8997_show_fled_state(struct device *dev,
+				   struct device_attribute *attr,
+				   char *buf)
+{
+	char temp[15];
+
+	if(fled_status & FLED1_FLT_BIT){
+		sprintf(temp, "LED1 FAULT\n");
+		strcat(buf, temp);
+		printk(KERN_ERR "led1 fault \n");
+	}else if(fled_status & FLED2_FLT_BIT){
+		sprintf(temp, "LED2 FAULT\n");
+		strcat(buf, temp);
+		printk(KERN_ERR "led2 fault \n");
+	}else{
+		sprintf(temp, "LED OK\n");
+		strcat(buf, temp);
+		printk(KERN_ERR "led OK \n");
+	}
+
+	return strlen(buf);
+}
+
+static DEVICE_ATTR(fled_state, S_IRUGO | S_IWUSR | S_IWGRP, max8997_show_fled_state, NULL);
+#endif
 
 int max8997_irq_init(struct max8997_dev *max8997)
 {
@@ -328,12 +373,16 @@ int max8997_irq_init(struct max8997_dev *max8997)
 
 	mutex_init(&max8997->irqlock);
 
+	/* Workaround
+	 * Just read 0x00 register because first I2C operation
+	 * is always failed.
+	 */
 	ret = max8997_read_reg(max8997->i2c, MAX8997_REG_ID, &pmic_id);
 	if (ret)
-		dev_err(max8997->dev, "%s: fail to read PMIC ID(0x%X)\n",
+		dev_err(max8997->dev, "%s: fail to read PMIC ID(%d)\n",
 				__func__, ret);
 	else
-		dev_info(max8997->dev, "%s: PMIC ID(0x%X)\n", __func__, pmic_id);
+		dev_info(max8997->dev, "%s: PMIC ID(%d)\n", __func__, pmic_id);
 
 	/* Mask the individual interrupt sources */
 	for (i = 0; i < MAX8997_NUM_IRQ_REGS; i++) {
@@ -355,7 +404,7 @@ int max8997_irq_init(struct max8997_dev *max8997)
 
 	/* Enable flash interrupts to debug flash over current issues */
 	ret = max8997_write_reg(max8997->i2c, MAX8997_REG_FLASH_STATUS_MASK,
-			0xfc);
+			0x3C);
 	if (ret)
 		dev_err(max8997->dev, "%s: fail to write FLASH IRQM(%d)\n",
 				__func__, ret);
@@ -373,6 +422,14 @@ int max8997_irq_init(struct max8997_dev *max8997)
 		set_irq_noprobe(cur_irq);
 #endif
 	}
+
+#ifdef DETECT_FLED_FAULT
+	fled_dev = device_create(sec_class, NULL, 0, NULL, "sec_fled");
+
+	ret = device_create_file(fled_dev, &dev_attr_fled_state);
+	if (ret)
+		dev_err(fled_dev,"Failed to create device file(fled_state)!\n");
+#endif
 
 	ret = request_threaded_irq(max8997->irq, NULL, max8997_irq_thread,
 				   IRQF_TRIGGER_LOW | IRQF_ONESHOT,

@@ -541,19 +541,26 @@ static int __devexit max8997_rtc_remove(struct platform_device *pdev)
 
 static void max8997_rtc_shutdown(struct platform_device *pdev)
 {
+	u8 val=0;
+	int i=0;
 	struct max8997_rtc_info *info = platform_get_drvdata(pdev);
-	int i;
-	u8 val = 0;
 
-	for (i = 0; i < 3; i++) {
-		max8997_rtc_enable_wtsr(info, false);
+	for(i=0;i<3;i++)
+	{
+		val=0;
+	    max8997_rtc_enable_wtsr(info, false);
+		msleep(50);
 		max8997_read_reg(info->rtc, MAX8997_WTSR_SMPL_CNTL, &val);
-		pr_info("%s: WTSR_SMPL reg(0x%02x)\n", __func__, val);
-		if (val & WTSR_EN_MASK)
-			pr_emerg("%s: fail to disable WTSR\n", __func__);
-		else {
-			pr_info("%s: success to disable WTSR\n", __func__);
-			break;
+		
+		if(val & (1 << WTSR_EN_SHIFT))
+		{
+			printk(KERN_ERR "%s: fail to disable WTSR reg(%x)\n",
+					__func__, val);	
+		}else
+		{
+			printk(KERN_ERR "%s: success to disable WTSR reg(%x) count(%d)\n",
+					__func__, val,i);	
+			break;			
 		}
 	}
 }

@@ -153,7 +153,7 @@ static int ld9040_gamma_ctl(struct ld9040 *lcd)
 	const unsigned short *gamma;
 	struct ld9040_panel_data *pdata = lcd->lcd_pd->pdata;
 
-	if (get_lcdtype == LCDTYPE_M2) { /* M2 */
+	if(get_lcdtype==LCDTYPE_M2){ /* M2 */
 		if (lcd->gamma_mode)
 			gamma = pdata->gamma19_table[lcd->bl];
 		else
@@ -168,7 +168,7 @@ static int ld9040_gamma_ctl(struct ld9040 *lcd)
 			gamma = pdata->gamma_sm2_a1_19_table[lcd->bl];
 		else
 			gamma = pdata->gamma_sm2_a1_22_table[lcd->bl];
-	}
+		}
 	ret = ld9040_panel_send_sequence(lcd, gamma);
 	if (ret) {
 		ret = -1;
@@ -186,67 +186,67 @@ static int ld9040_set_elvss(struct ld9040 *lcd)
 	int ret = 0;
 	struct ld9040_panel_data *pdata = lcd->lcd_pd->pdata;
 
-	if (get_lcdtype == LCDTYPE_M2) {  /* for M2 */
-		if (lcd->acl_enable) {			
-				switch (lcd->bl) {
-				case 0 ... 14: /* 30cd ~ 200cd */
-					ret = ld9040_panel_send_sequence(lcd, pdata->elvss_table[0]);
-					break;
-				case 15 ... 24: /* 210cd ~ 300cd */
-					ret = ld9040_panel_send_sequence(lcd, pdata->elvss_table[1]);
-					break;
-				default:
-					break;
-				}
+	if(get_lcdtype==LCDTYPE_M2){  /* for M2 */
+		if (lcd->acl_enable) {
+			switch (lcd->bl) {
+			case 0 ... 14: /* 30cd ~ 200cd */
+				ret = ld9040_panel_send_sequence(lcd, pdata->elvss_table[0]);
+				break;
+			case 15 ... 24: /* 210cd ~ 300cd */
+				ret = ld9040_panel_send_sequence(lcd, pdata->elvss_table[1]);
+				break;
+			default:
+				break;
+			}
 		} else {
-				switch (lcd->bl) {
-				case 0 ... 4: /* 30cd ~ 100cd */
-					ret = ld9040_panel_send_sequence(lcd, pdata->elvss_table[0]);
-					break;
-				case 5 ... 10: /* 110cd ~ 160cd */
-					ret = ld9040_panel_send_sequence(lcd, pdata->elvss_table[1]);
-					break;
-				case 11 ... 14: /* 170cd ~ 200cd */
-					ret = ld9040_panel_send_sequence(lcd, pdata->elvss_table[2]);
-					break;
-				case 15 ... 24: /* 210cd ~ 300cd */
-					ret = ld9040_panel_send_sequence(lcd, pdata->elvss_table[3]);
-					break;
-				default:
-					break;
-				}
+		switch (lcd->bl) {
+		case 0 ... 4: /* 30cd ~ 100cd */
+			ret = ld9040_panel_send_sequence(lcd, pdata->elvss_table[0]);
+			break;
+		case 5 ... 10: /* 110cd ~ 160cd */
+			ret = ld9040_panel_send_sequence(lcd, pdata->elvss_table[1]);
+			break;
+		case 11 ... 14: /* 170cd ~ 200cd */
+			ret = ld9040_panel_send_sequence(lcd, pdata->elvss_table[2]);
+			break;
+		case 15 ... 24: /* 210cd ~ 300cd */
+			ret = ld9040_panel_send_sequence(lcd, pdata->elvss_table[3]);
+			break;
+		default:
+			break;
+		}
 		}
 	} else {/* for SM2 (A1 line or A2 line) */
-	if (lcd->acl_enable) {
-				switch (lcd->bl) {
-				case 0 ... 14: /* 30cd ~ 200cd */
-					ret = ld9040_panel_send_sequence(lcd, pdata->elvss_sm2_table[0]);
-					break;
-				case 15 ... 24: /* 210cd ~ 300cd */
-					ret = ld9040_panel_send_sequence(lcd, pdata->elvss_sm2_table[1]);
-					break;
-				default:
-					break;
-				}
-	} else {
-				switch (lcd->bl) {
-				case 0 ... 4: /* 30cd ~ 100cd */
-					ret = ld9040_panel_send_sequence(lcd, pdata->elvss_sm2_table[0]);
-					break;
-				case 5 ... 10: /* 110cd ~ 160cd */
-					ret = ld9040_panel_send_sequence(lcd, pdata->elvss_sm2_table[1]);
-					break;
-				case 11 ... 14: /* 170cd ~ 200cd */
-					ret = ld9040_panel_send_sequence(lcd, pdata->elvss_sm2_table[2]);
-					break;
-				case 15 ... 24: /* 210cd ~ 300cd */
-					ret = ld9040_panel_send_sequence(lcd, pdata->elvss_sm2_table[3]);
-					break;
-				default:
-					break;
-				}
+		if (lcd->acl_enable) {
+			switch (lcd->bl) {
+			case 0 ... 14: /* 30cd ~ 200cd */
+				ret = ld9040_panel_send_sequence(lcd, pdata->elvss_sm2_table[0]);
+				break;
+			case 15 ... 24: /* 210cd ~ 300cd */
+				ret = ld9040_panel_send_sequence(lcd, pdata->elvss_sm2_table[1]);
+				break;
+			default:
+				break;
+			}
+		} else {
+		switch (lcd->bl) {
+		case 0 ... 4: /* 30cd ~ 100cd */
+			ret = ld9040_panel_send_sequence(lcd, pdata->elvss_sm2_table[0]);
+			break;
+		case 5 ... 10: /* 110cd ~ 160cd */
+			ret = ld9040_panel_send_sequence(lcd, pdata->elvss_sm2_table[1]);
+			break;
+		case 11 ... 14: /* 170cd ~ 200cd */
+			ret = ld9040_panel_send_sequence(lcd, pdata->elvss_sm2_table[2]);
+			break;
+		case 15 ... 24: /* 210cd ~ 300cd */
+			ret = ld9040_panel_send_sequence(lcd, pdata->elvss_sm2_table[3]);
+			break;
+		default:
+			break;
+		}
 	}
-}
+	}
 	dev_dbg(lcd->dev, "level  = %d\n", lcd->bl);
 
 	if (ret) {
@@ -264,11 +264,11 @@ static int ld9040_set_acl(struct ld9040 *lcd)
 	struct ld9040_panel_data *pdata = lcd->lcd_pd->pdata;
 
 	if (lcd->acl_enable) {
-		if (lcd->cur_acl == 0) {
+		if(lcd->cur_acl == 0)  {
 			if(lcd->bl ==0 || lcd->bl ==1)
 				dev_dbg(lcd->dev,"if bl_value is 0 or 1, acl_on skipped\n");
 			else
-				ret = ld9040_panel_send_sequence(lcd, pdata->acl_on);
+			ret = ld9040_panel_send_sequence(lcd, pdata->acl_on);
 		}
 		switch (lcd->bl) {
 		case 0 ... 1: /* 30cd ~ 40cd */
@@ -341,7 +341,7 @@ static int ld9040_ldi_init(struct ld9040 *lcd)
 {
 	int ret, i;
 	struct ld9040_panel_data *pdata = lcd->lcd_pd->pdata;
-	if (get_lcdtype == LCDTYPE_M2) {  /* for M2 */
+	if(get_lcdtype==LCDTYPE_M2){  /* for M2 */
 		const unsigned short *init_seq[] = {
 			pdata->seq_user_set,
 			pdata->seq_displayctl_set,
@@ -429,9 +429,10 @@ static int update_brightness(struct ld9040 *lcd)
 	int ret;
 
         ret = ld9040_gamma_ctl(lcd);
-        if (ret) {
-                return -1;
-        }
+	if (ret) {
+		return -1;
+	}
+
 	ret = ld9040_set_elvss(lcd);
 	if (ret) {
 		return -1;
@@ -441,7 +442,6 @@ static int update_brightness(struct ld9040 *lcd)
 	if (ret) {
 		return -1;
 	}
-
 
 	return 0;
 }
@@ -896,7 +896,7 @@ static int ld9040_probe(struct spi_device *spi)
 	lcd->gamma_mode = 0;
 	lcd->current_gamma_mode = 0;
 
-	lcd->acl_enable = 0;
+	lcd->acl_enable = 1;
 	lcd->cur_acl = 0;
 
 	/*

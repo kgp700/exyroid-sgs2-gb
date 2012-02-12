@@ -19,6 +19,7 @@
 #include <linux/spinlock.h>
 #include <linux/uaccess.h>
 #include <linux/proc_fs.h>
+#include <linux/seq_file.h>
 
 #include <mach/system.h>
 #include <mach/sec_debug.h>
@@ -30,6 +31,13 @@ enum sec_debug_upload_cause_t {
 	UPLOAD_CAUSE_CP_ERROR_FATAL = 0x000000CC,
 	UPLOAD_CAUSE_USER_FAULT = 0x0000002F,
 	UPLOAD_CAUSE_HSIC_DISCONNECTED = 0x000000DD,
+};
+
+enum sec_debug_reset_reason_t {
+	RR_S = 1,
+	RR_W = 2,
+	RR_D = 3,
+	RR_N = 4,
 };
 
 struct sec_debug_mmu_reg_t {
@@ -118,8 +126,12 @@ struct sec_debug_core_t {
 /* enable sec_debug feature */
 static unsigned enable = 1;
 static unsigned enable_user = 0;
+static unsigned reset_reason = RR_N;
+unsigned int sec_ibl_ver = 0;
 module_param_named(enable, enable, uint, 0644);
 module_param_named(enable_user, enable_user, uint, 0644);
+module_param_named(reset_reason, reset_reason, uint, 0644);
+module_param_named(sec_ibl_ver, sec_ibl_ver, uint, 0644);
 
 static const char *gkernel_sec_build_info_date_time[] = {
 	__DATE__,
@@ -130,11 +142,16 @@ static char gkernel_sec_build_info[100];
 
 /* klaatu - schedule log */
 #ifdef CONFIG_SEC_DEBUG_SCHED_LOG
-static struct sched_log gExcpTaskLog[2][SCHED_LOG_MAX] __cacheline_aligned;
+static struct task_info gExcpTaskLog[2][SCHED_LOG_MAX] __cacheline_aligned;
+static struct irq_log gExcpIrqLog[2][SCHED_LOG_MAX] __cacheline_aligned;
+static struct softirq_log gExcpSoftIrqLog[2][SCHED_LOG_MAX] __cacheline_aligned;
+static struct enterexit_log gExcpIrqEnterExitLog[2][SCHED_LOG_MAX] __cacheline_aligned;
 static atomic_t gExcpTaskLogIdx[2] = { ATOMIC_INIT(-1), ATOMIC_INIT(-1) };
-static unsigned long long gExcpIrqExitTime[2];
+static atomic_t gExcpIrqLogIdx[2] = { ATOMIC_INIT(-1), ATOMIC_INIT(-1) };
+static atomic_t gExcpSoftIrqLogIdx[2] = { ATOMIC_INIT(-1), ATOMIC_INIT(-1) };
+static atomic_t gExcpIrqEnterExitLogIdx[2] = { ATOMIC_INIT(-1), ATOMIC_INIT(-1) };
 
-static int checksum_sched_log(void)
+static int checksum_sched_log()
 {
 	int sum = 0, i;
 	for (i = 0; i < sizeof(gExcpTaskLog); i++)
@@ -143,7 +160,7 @@ static int checksum_sched_log(void)
 	return sum;
 }
 #else
-static int checksum_sched_log(void)
+static int checksum_sched_log()
 {
 	return 0;
 }
@@ -173,7 +190,7 @@ DEFINE_PER_CPU(struct sec_debug_mmu_reg_t, sec_debug_mmu_reg);
 DEFINE_PER_CPU(enum sec_debug_upload_cause_t, sec_debug_upload_cause);
 
 /* core reg dump function*/
-static inline void sec_debug_save_core_reg(struct sec_debug_core_t *core_reg)
+static void sec_debug_save_core_reg(struct sec_debug_core_t *core_reg)
 {
 	/* we will be in SVC mode when we enter this function. Collect
 	   SVC registers along with cmn registers. */
@@ -270,7 +287,7 @@ static inline void sec_debug_save_core_reg(struct sec_debug_core_t *core_reg)
 	return;
 }
 
-static inline void sec_debug_save_mmu_reg(struct sec_debug_mmu_reg_t *mmu_reg)
+static void sec_debug_save_mmu_reg(struct sec_debug_mmu_reg_t *mmu_reg)
 {
 	asm("mrc    p15, 0, r1, c1, c0, 0\n\t"	/* SCTLR */
 	    "str r1, [%0]\n\t"
@@ -310,7 +327,7 @@ static inline void sec_debug_save_mmu_reg(struct sec_debug_mmu_reg_t *mmu_reg)
 	);
 }
 
-static inline void sec_debug_save_context(void)
+static void sec_debug_save_context(void)
 {
 	unsigned long flags;
 	local_irq_save(flags);
@@ -353,26 +370,7 @@ static void sec_debug_set_upload_cause(enum sec_debug_upload_cause_t type)
 	pr_emerg("(%s) %x\n", __func__, type);
 }
 
-/*
- * Called from dump_stack()
- * This function call does not necessarily mean that a fatal error
- * had occurred. It may be just a warning.
- */
-static inline int sec_debug_dump_stack(void)
-{
-	if (!enable)
-		return -1;
-
-	sec_debug_save_context();
-
-	/* flush L1 from each core.
-	   L2 will be flushed later before reset. */
-	flush_cache_all();
-
-	return 0;
-}
-
-static inline void sec_debug_hw_reset(void)
+static void sec_debug_hw_reset(void)
 {
 	pr_emerg("(%s) %s\n", __func__, gkernel_sec_build_info);
 	pr_emerg("(%s) rebooting...\n", __func__);
@@ -415,7 +413,25 @@ static int sec_debug_panic_handler(struct notifier_block *nb,
 	return 0;
 }
 
-#if !defined(CONFIG_TARGET_LOCALE_NA)
+/*
+ * Called from dump_stack()
+ * This function call does not necessarily mean that a fatal error
+ * had occurred. It may be just a warning.
+ */
+int sec_debug_dump_stack(void)
+{
+	if (!enable)
+		return -1;
+
+	sec_debug_save_context();
+
+	/* flush L1 from each core.
+	   L2 will be flushed later before reset. */
+	flush_cache_all();
+
+	return 0;
+}
+
 void sec_debug_check_crash_key(unsigned int code, int value)
 {
 	static enum { NONE, HOME_DOWN } state = NONE;
@@ -447,66 +463,6 @@ void sec_debug_check_crash_key(unsigned int code, int value)
 	} else
 		state = NONE;
 }
-
-#else
-
-static struct hrtimer upload_start_timer;
-
-static enum hrtimer_restart force_upload_timer_func(struct hrtimer *timer)
-{
-	panic("Crash Key");
-
-	return HRTIMER_NORESTART;
-}
-
-/*  Volume UP + Volume Down = Force Upload Mode
-    1. check for VOL_UP and VOL_DOWN
-    2. if both key pressed start a timer with timeout period 3s
-    3. if any one of two keys is released before 3s disable timer. */
-void sec_debug_check_crash_key(unsigned int code, int value)
-{
-	static bool vol_up = 0, vol_down = 0, check = 0;
-
-	if (!enable)
-		return;
-
-	if ((code == KEY_VOLUMEUP) || (code == KEY_VOLUMEDOWN)) {
-		if (value) {
-			if (code == KEY_VOLUMEUP)
-				vol_up = true;
-
-			if (code == KEY_VOLUMEDOWN)
-				vol_down = true;
-
-			if (vol_up == true && vol_down == true) {
-				hrtimer_start(&upload_start_timer,
-					      ktime_set(3, 0),
-					      HRTIMER_MODE_REL);
-				check = true;
-			}
-		} else {
-			if (vol_up == true)
-				vol_up = false;
-			if (vol_down == true)
-				vol_down = false;
-			if (check) {
-				hrtimer_cancel(&upload_start_timer);
-				check = 0;
-			}
-		}
-	}
-}
-
-static void __init upload_timer_init()
-{
-        hrtimer_init(&upload_start_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
-        upload_start_timer.function = force_upload_timer_func;
-}
-
-/* this should be initialized prior to keypad driver */
-early_initcall(upload_timer_init);
-
-#endif
 
 static struct notifier_block nb_reboot_block = {
 	.notifier_call = sec_debug_normal_reboot_handler
@@ -543,6 +499,11 @@ __init int sec_debug_init(void)
 	return 0;
 }
 
+int sec_debug_level(void)
+{
+	return enable;
+}
+
 /* klaatu - schedule log */
 #ifdef CONFIG_SEC_DEBUG_SCHED_LOG
 void sec_debug_task_sched_log(int cpu, struct task_struct *task)
@@ -550,28 +511,54 @@ void sec_debug_task_sched_log(int cpu, struct task_struct *task)
 	unsigned i =
 	    atomic_inc_return(&gExcpTaskLogIdx[cpu]) & (SCHED_LOG_MAX - 1);
 	gExcpTaskLog[cpu][i].time = cpu_clock(cpu);
-	strcpy(gExcpTaskLog[cpu][i].log.task.comm, task->comm);
-	gExcpTaskLog[cpu][i].log.task.pid = task->pid;
-	gExcpTaskLog[cpu][i].log.task.cpu = cpu;
+	strcpy(gExcpTaskLog[cpu][i].comm, task->comm);
+	gExcpTaskLog[cpu][i].pid = task->pid;
 }
 
 void sec_debug_irq_sched_log(unsigned int irq, void *fn, int en)
 {
 	int cpu = smp_processor_id();
 	unsigned i =
-	    atomic_inc_return(&gExcpTaskLogIdx[cpu]) & (SCHED_LOG_MAX - 1);
-	gExcpTaskLog[cpu][i].time = cpu_clock(cpu);
-	gExcpTaskLog[cpu][i].log.irq.cpu = cpu;
-	gExcpTaskLog[cpu][i].log.irq.irq = irq;
-	gExcpTaskLog[cpu][i].log.irq.fn = (void *)fn;
-	gExcpTaskLog[cpu][i].log.irq.en = en;
+	    atomic_inc_return(&gExcpIrqLogIdx[cpu]) & (SCHED_LOG_MAX - 1);
+	gExcpIrqLog[cpu][i].time = cpu_clock(cpu);
+	gExcpIrqLog[cpu][i].irq = irq;
+	gExcpIrqLog[cpu][i].fn = (void *)fn;
+	gExcpIrqLog[cpu][i].en = en;
+}
+
+void sec_debug_irq_sched_log_end(void)
+{
+	int cpu = smp_processor_id();
+	unsigned i = atomic_read(&gExcpIrqLogIdx[cpu]) & (SCHED_LOG_MAX - 1);
+	gExcpIrqLog[cpu][i].elapsed_time = cpu_clock(cpu) -gExcpIrqLog[cpu][i].time;
+}
+
+void sec_debug_softirq_sched_log(void *fn)
+{
+	int cpu = smp_processor_id();
+	unsigned i =
+	    atomic_inc_return(&gExcpSoftIrqLogIdx[cpu]) & (SCHED_LOG_MAX - 1);
+	gExcpSoftIrqLog[cpu][i].time = cpu_clock(cpu);
+	gExcpSoftIrqLog[cpu][i].fn = (void *)fn;
+}
+
+void sec_debug_softirq_sched_log_end(void)
+{
+	int cpu = smp_processor_id();
+	unsigned i = atomic_read(&gExcpSoftIrqLogIdx[cpu]) & (SCHED_LOG_MAX - 1);
+	gExcpSoftIrqLog[cpu][i].elapsed_time = cpu_clock(cpu) -gExcpSoftIrqLog[cpu][i].time;
 }
 
 #ifdef CONFIG_SEC_DEBUG_IRQ_EXIT_LOG
-void sec_debug_irq_last_exit_log(void)
+void sec_debug_irq_enterexit_log(unsigned int irq, unsigned long long start_time)
 {
 	int cpu = smp_processor_id();
-    gExcpIrqExitTime[cpu] = cpu_clock(cpu);
+	unsigned i =
+	    atomic_inc_return(&gExcpIrqEnterExitLogIdx[cpu]) & (SCHED_LOG_MAX - 1);
+	gExcpIrqEnterExitLog[cpu][i].time = start_time;
+	gExcpIrqEnterExitLog[cpu][i].end_time = cpu_clock(cpu);
+	gExcpIrqEnterExitLog[cpu][i].irq = irq;
+	gExcpIrqEnterExitLog[cpu][i].elapsed_time = gExcpIrqEnterExitLog[cpu][i].end_time -start_time;
 }
 #endif
 #endif /* CONFIG_SEC_DEBUG_SCHED_LOG */
@@ -768,3 +755,43 @@ static int __init sec_debug_user_fault_init(void)
 
 device_initcall(sec_debug_user_fault_init);
 #endif
+
+static int set_reset_reason_proc_show(struct seq_file *m, void *v)
+{
+	if (reset_reason == RR_S)
+		seq_printf(m, "SPON\n");
+	else if(reset_reason == RR_W)
+		seq_printf(m, "WPON\n");
+	else if(reset_reason == RR_D)
+		seq_printf(m, "DPON\n");
+	else
+		seq_printf(m, "NPON\n");
+
+	return 0;
+}
+
+static int sec_reset_reason_proc_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, set_reset_reason_proc_show, NULL);
+}
+
+static const struct file_operations sec_reset_reason_proc_fops = {
+	.open		= sec_reset_reason_proc_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
+
+static int __init sec_debug_reset_reason_init(void)
+{
+	struct proc_dir_entry *entry;
+
+	entry = proc_create("reset_reason", S_IRUGO, NULL,
+			    &sec_reset_reason_proc_fops);
+	if (!entry)
+		return -ENOMEM;
+
+	return 0;
+}
+
+device_initcall(sec_debug_reset_reason_init);

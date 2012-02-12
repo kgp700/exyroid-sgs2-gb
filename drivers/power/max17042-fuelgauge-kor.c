@@ -270,6 +270,17 @@ static void max17042_get_rcomp(struct i2c_client *client)
 	//printk(KERN_ERR "%s : %x, %x, rcomp = 0x%x\n", __func__, data[1], data[0], chip->rcomp);
 }
 
+static void max17042_set_rcomp(struct i2c_client *client, u16 rcomp)
+{
+	struct max17042_chip *chip = i2c_get_clientdata(client);
+	u8 data[2];
+
+	data[0] = rcomp & 0xff;
+	data[1] = rcomp >> 8;
+	if (max17042_write_reg(client, MAX17042_REG_RCOMP, data) < 0)
+		return;
+}
+
 static void max17042_get_status(struct i2c_client *client)
 {
 	struct max17042_chip *chip = i2c_get_clientdata(client);
@@ -704,8 +715,15 @@ static int __devinit max17042_probe(struct i2c_client *client,
 	/* check rcomp & config */
 	max17042_get_rcomp(client);
 	max17042_get_config(client);
-	printk("%s : rcomp = 0x%x, config = 0x%x\n",
+	printk("%s : rcomp = 0x%04x, config = 0x%04x\n",
 		__func__, chip->rcomp, chip->config);
+
+	if (chip->rcomp != MAX17042_NEW_RCOMP) {
+		max17042_set_rcomp(client, MAX17042_NEW_RCOMP);
+		printk("%s : set new rcomp = 0x%04x\n", __func__, MAX17042_NEW_RCOMP);
+		max17042_get_rcomp(client);
+		printk("%s : new rcomp = 0x%04x\n", __func__, chip->rcomp);
+	}
 
 	/* register low batt intr */
 	ret = max17042_irq_init(chip);

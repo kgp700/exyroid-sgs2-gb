@@ -375,7 +375,8 @@ static void sdhci_s3c_requlator_work(struct work_struct *work)
 		if (!gpio_get_value(sc->ext_cd_gpio)) {
 			regulator_enable(host->vmmc);
 		} else {
-			regulator_disable(host->vmmc);
+			if (regulator_is_enabled(host->vmmc))
+				regulator_disable(host->vmmc);
 		}
 	}
 }
@@ -714,10 +715,8 @@ static int __devexit sdhci_s3c_remove(struct platform_device *pdev)
 	sdhci_remove_host(host, 1);
 
 	for (ptr = 0; ptr < 3; ptr++) {
-		if (sc->clk_bus[ptr]) {
-			clk_disable(sc->clk_bus[ptr]);
-			clk_put(sc->clk_bus[ptr]);
-		}
+		clk_disable(sc->clk_bus[ptr]);
+		clk_put(sc->clk_bus[ptr]);
 	}
 	clk_disable(sc->clk_io);
 	clk_put(sc->clk_io);
@@ -748,19 +747,9 @@ static int sdhci_s3c_suspend(struct platform_device *dev, pm_message_t pm)
 static int sdhci_s3c_resume(struct platform_device *dev)
 {
 	struct sdhci_host *host = platform_get_drvdata(dev);
+
 	sdhci_resume_host(host);
 	
-#if defined(CONFIG_WIMAX_CMC) && defined(CONFIG_TARGET_LOCALE_NA)
-      	struct s3c_sdhci_platdata *pdata = dev->dev.platform_data;
-	u32 ier;
-	if (pdata->enable_intr_on_resume) {
-                ier = sdhci_readl(host, SDHCI_INT_ENABLE);
-                ier |= SDHCI_INT_CARD_INT;
-                sdhci_writel(host, ier, SDHCI_INT_ENABLE);
-                sdhci_writel(host, ier, SDHCI_SIGNAL_ENABLE);
-        } 
-#endif
-
 	return 0;
 }
 

@@ -1,5 +1,5 @@
 /* linux/arch/arm/mach-s5pv310/tmu.c
-*
+
 * Copyright (c) 2010 Samsung Electronics Co., Ltd.
 *      http://www.samsung.com/
 *
@@ -36,9 +36,14 @@
 
 /* Support Bootloader parameter setting by SBL interface */
 #undef CONFIG_TMU_DEBUG_ENABLE
+//#define CONFIG_TMU_DEBUG_ENABLE
 
 /* Selectable one room temperature among 3 kinds */
-#undef  OPERATION_TEMP_BASE_78
+//#define  OPERATION_TEMP_BASE_78
+//#define OPERATION_TEMP_BASE_35
+//#define OPERATION_TEMP_BASE_40
+//#define OPERATION_TEMP_BASE_52
+//#define OPERATION_TEMP_BASE_58
 #define OPERATION_TEMP_BASE_61
 
 #define TIMMING_AREF 0x30
@@ -62,9 +67,71 @@
 /* interrupt level by celcius degree */
 #define TEMP_MIN_CELCIUS	 25
 #define TEMP_TROTTLED_CELCIUS	 87
-#define TEMP_TQ0_CELCIUS	 85
+#define TEMP_TQ0_CELCIUS	 90
 #define TEMP_WARNING_CELCIUS	103
 #define TEMP_TRIPPED_CELCIUS	110
+#define TEMP_MAX_CELCIUS	125
+#endif
+
+#ifdef OPERATION_TEMP_BASE_35
+/* test on 35 celsius base */
+#define THD_TEMP     0x55 /* 35 degree: thershold temp */
+#define TRIGGER_LEV0 0x5  /* 40	degree: Throttling temperature */
+#define TRIGGER_LEV1 0xA  /* 45	degree: Waring temperature */
+#define TRIGGER_LEV2 0xF  /* 50	degree: Tripping temperature */
+#define TRIGGER_LEV3 0xFF /* Reserved */
+#define TEMP_TROTTLED_CELCIUS	 40
+#define TEMP_WARNING_CELCIUS	 45
+#define TEMP_TQ0_CELCIUS	 48
+#define TEMP_TRIPPED_CELCIUS	 50
+#define TEMP_MIN_CELCIUS	 25
+#define TEMP_MAX_CELCIUS	125
+#endif
+
+#ifdef OPERATION_TEMP_BASE_40
+/* test on 40 celsius base */
+#define THD_TEMP     0x5A /* 40 degree: thershold temp */
+#define TRIGGER_LEV0 0x5  /* 45	degree: Throttling temperature */
+#define TRIGGER_LEV1 0xA  /* 50	degree: Waring temperature */
+#define TRIGGER_LEV2 0xF  /* 55	degree: Tripping temperature */
+#define TRIGGER_LEV3 0xFF /* Reserved */
+#define TEMP_TROTTLED_CELCIUS	 45
+#define TEMP_WARNING_CELCIUS	 50
+#define TEMP_TQ0_CELCIUS	 52
+#define TEMP_TRIPPED_CELCIUS	 55
+#define TEMP_MIN_CELCIUS	 25
+#define TEMP_MAX_CELCIUS	125
+#endif
+
+
+#ifdef OPERATION_TEMP_BASE_52
+/* test on 52 celsius base */
+#define THD_TEMP     0x66 /* 52 degree: thershold temp */
+#define TRIGGER_LEV0 0x3  /* 55	degree: Throttling temperature */
+#define TRIGGER_LEV1 0x33 /* 103 degree: Waring temperature */
+#define TRIGGER_LEV2 0x3A /* 110 degree: Tripping temperature */
+#define TRIGGER_LEV3 0xFF /* Reserved */
+#define TEMP_TROTTLED_CELCIUS	 55
+#define TEMP_WARNING_CELCIUS	103
+#define TEMP_TQ0_CELCIUS	 90
+#define TEMP_TRIPPED_CELCIUS	110
+#define TEMP_MIN_CELCIUS	 25
+#define TEMP_MAX_CELCIUS	125
+#endif
+
+
+#ifdef OPERATION_TEMP_BASE_58
+/* test on 58 celsius base */
+#define THD_TEMP     0x6C /* 58 degree: thershold temp */
+#define TRIGGER_LEV0 0x3  /* 61	degree: Throttling temperature */
+#define TRIGGER_LEV1 0x2D /* 103 degree: Waring temperature */
+#define TRIGGER_LEV2 0x34 /* 110 degree: Tripping temperature */
+#define TRIGGER_LEV3 0xFF /* Reserved */
+#define TEMP_TROTTLED_CELCIUS	 61
+#define TEMP_WARNING_CELCIUS	103
+#define TEMP_TQ0_CELCIUS	 90
+#define TEMP_TRIPPED_CELCIUS	110
+#define TEMP_MIN_CELCIUS	 25
 #define TEMP_MAX_CELCIUS	125
 #endif
 
@@ -77,7 +144,7 @@
 #define TRIGGER_LEV3 0xFF /* Reserved */
 #define TEMP_TROTTLED_CELCIUS	 64
 #define TEMP_WARNING_CELCIUS	103
-#define TEMP_TQ0_CELCIUS	 85
+#define TEMP_TQ0_CELCIUS	 80
 #define TEMP_TRIPPED_CELCIUS	110
 #define TEMP_MIN_CELCIUS	 25
 #define TEMP_MAX_CELCIUS	125
@@ -91,9 +158,11 @@
 #define EFUSE_MIN_VALUE 60
 #define EFUSE_AVG_VALUE 80
 #define EFUSE_MAX_VALUE 100
-#define FIN	(24*1000*1000)
+#define FIN	24*1000*1000
 
 static struct workqueue_struct  *tmu_monitor_wq;
+static struct resource *s5p_tmu_mem;
+static int irq_tmu = NO_IRQ;
 unsigned int tmu_save[TMU_SAVE_NUM];
 
 enum tmu_status_t {
@@ -114,23 +183,16 @@ struct tmu_data_band {
 };
 
 struct tmu_data_band tmu_temp_band = {
-#ifdef OPERATION_TEMP_BASE_61
-	/*  61 : low temp of throttling */
-	.thr_low	= TEMP_TROTTLED_CELCIUS	- 3,
+#ifdef OPERATION_TEMP_BASE_78
+	.thr_low	= TEMP_TROTTLED_CELCIUS	- 4,	/*  83: low temp of throttling */
 #else
-	/*  83 : low temp of throttling */
-	.thr_low	= TEMP_TROTTLED_CELCIUS	- 4,
+	.thr_low	= TEMP_TROTTLED_CELCIUS	- 3,	/*  61, 58, 52 : low temp of throttling */
 #endif
-	/*  90 : hith temp of warning */
-	.thr_high	= TEMP_WARNING_CELCIUS	- 5,
-	/*  97 : low temp of warning */
-	.warn_low	= TEMP_WARNING_CELCIUS	- 6,
-	/* 105 : high temp of warning */
-	.warn_high	= TEMP_WARNING_CELCIUS	+ 3,
-	/* 113 : trip re-try */
-	.trip_retry	= TEMP_TRIPPED_CELCIUS  + 3,
-	/* 85: tq0 temp */
-	.tq0_temp	= TEMP_TQ0_CELCIUS,
+	.thr_high	= TEMP_WARNING_CELCIUS	- 5,	/*  90 : hith temp of warning */
+	.warn_low	= TEMP_WARNING_CELCIUS	- 6,	/*  97 : low temp of warning */
+	.warn_high	= TEMP_WARNING_CELCIUS	+ 3,	/* 105 : high temp of warning */
+	.trip_retry	= TEMP_TRIPPED_CELCIUS  + 3,    /* 113 : trip re-try */
+	.tq0_temp	= TEMP_TQ0_CELCIUS,    /* 90: tq0 temp */   
 };
 
 static DEFINE_MUTEX(tmu_lock);
@@ -139,6 +201,7 @@ struct s5p_tmu_info {
 	struct device *dev;
 
 	char *tmu_name;
+	struct tmu_data_band tmu_a;
 	struct s5p_tmu *ctz;
 	struct tmu_data_band *temp;
 
@@ -148,65 +211,71 @@ struct s5p_tmu_info {
 	unsigned int monitor_period;
 	unsigned int sampling_rate;
 
-	struct resource *ioarea;
-	unsigned int irq;
-	unsigned int reg_save[TMU_SAVE_NUM];
 	int tmu_status;
 };
 struct s5p_tmu_info *tmu_info;
 
 #ifdef CONFIG_TMU_DEBUG_ENABLE
-static int set_tmu_test;
-#ifdef OPERATION_TEMP_BASE_61
-static int set_thr_stop		= (TEMP_TROTTLED_CELCIUS - 3);
-#else
-static int set_thr_stop		= (TEMP_TROTTLED_CELCIUS - 4);
-#endif
-static int set_thr_temp		= TEMP_TROTTLED_CELCIUS;
-static int set_warn_stop	= (TEMP_WARNING_CELCIUS	- 6);
-static int set_warn_temp	= TEMP_WARNING_CELCIUS;
-static int set_trip_temp	= TEMP_TRIPPED_CELCIUS;
-static int set_tq0_temp		= TEMP_TQ0_CELCIUS;
+static int irq_tq0;
+static struct delayed_work tq0_polling_work;
 
-static int set_sampling_rate;
+static int set_tmu_test		= 0;
+static int set_thr_stop		= 0;
+static int set_thr_temp		= 0;
+static int set_warn_stop	= 0;
+static int set_warn_temp	= 0;
+static int set_trip_temp	= 0;
+static int set_tq0_temp	= 0;
+
+static int set_sampling_rate	= 0;
 static int set_cpu_level	= 3;
+static int set_tq0_enable	= 0;
+static int set_tq0_mode	= 1;
+static int set_tq0_period	= 1000;
 
 static int __init tmu_test_param(char *str)
 {
-	int tmu_temp[7] = {NULL, NULL, NULL, NULL, NULL, NULL, NULL,};
+	int tmu_temp[7];
 
 	get_options(str, 7, tmu_temp);
 
 	set_tmu_test	= tmu_temp[0];
-	printk(KERN_INFO "@@@tmu_test enable = %d\n", set_tmu_test);
 
 	if (tmu_temp[1])
-		set_thr_stop	= tmu_temp[1];
-	printk(KERN_INFO "@@@1st throttling stop temp = %d\n", set_thr_stop);
+	    set_thr_stop = tmu_temp[1];
 
 	if (tmu_temp[2])
-		set_thr_temp	= tmu_temp[2];
-	printk(KERN_INFO "@@@1st throttling start temp = %d\n", set_thr_temp);
+	    set_thr_temp = tmu_temp[2];
 
 	if (tmu_temp[3])
-		set_warn_stop   = tmu_temp[3];
-	printk(KERN_INFO "@@@2nd throttling stop temp = %d\n", set_warn_stop);
+	    set_warn_stop = tmu_temp[3];
 
 	if (tmu_temp[4])
-		set_warn_temp	= tmu_temp[4];
-	printk(KERN_INFO "@@@2nd throttling start temp = %d\n", set_warn_temp);
+	    set_warn_temp = tmu_temp[4];
 
 	if (tmu_temp[5])
-		set_trip_temp	= tmu_temp[5];
-	printk(KERN_INFO "@@@tripping temp = %d\n", set_trip_temp);
+	    set_trip_temp = tmu_temp[5];
 
 	if (tmu_temp[6])
-		set_tq0_temp	= tmu_temp[6];
-	printk(KERN_INFO "@@@memory throttling temp = %d\n", set_tq0_temp);
+	    set_tq0_temp = tmu_temp[6];
 
 	return 0;
 }
 early_param("tmu_test", tmu_test_param);
+
+static int __init tq0_param(char *str)
+{
+	int tq0_temp[3];
+
+	get_options(str, 3, tq0_temp);
+
+	set_tq0_enable	= tq0_temp[0];
+	set_tq0_mode	= tq0_temp[1];
+	set_tq0_period	= tq0_temp[2];
+	
+	return 0;
+}
+early_param("tq0_mode", tq0_param);
 
 static int __init limit_param(char *str)
 {
@@ -235,33 +304,14 @@ static void tmu_start_testmode(struct platform_device *pdev)
 	unsigned int thresh_temp_adc, thr_temp_adc, trip_temp_adc;
 	unsigned int warn_temp_adc = 0xFF;
 
-	/* To use handling routine, change temperature date of tmu info */
-	tmu_info->temp->thr_low		 = set_thr_stop;
-	tmu_info->temp->thr_high	 = set_warn_temp - 5;
-	tmu_info->temp->warn_low	 = set_warn_stop;
-	tmu_info->temp->warn_high	 = set_warn_temp + 5;
-	tmu_info->temp->trip_retry	 = set_trip_temp + 3;
-	tmu_info->temp->tq0_temp	 = set_tq0_temp;
-
-	pr_info("1st throttling stop_temp  = %d, start_temp = %d\n,\
-		2nd throttling stop_temp = %d, start_tmep = %d\n,\
-		tripping temp = %d, tripping retry_temp = %d\n,\
-		memory throttling stop_temp = %d, start_temp = %d\n",
-		tmu_info->temp->thr_low, tmu_info->temp->thr_high - 4,
-		tmu_info->temp->warn_low, tmu_info->temp->warn_high - 3,
-		tmu_info->temp->trip_retry - 3, tmu_info->temp->trip_retry,
-		tmu_info->temp->tq0_temp -5, tmu_info->temp->tq0_temp);
-
 	/* Compensation temperature THD_TEMP */
 	thresh_temp_adc	= set_thr_stop + tz->data.te1 - TMU_DC_VALUE;
-	thr_temp_adc	= set_thr_temp + tz->data.te1 - TMU_DC_VALUE
-				- thresh_temp_adc;
-	warn_temp_adc   = set_warn_temp + tz->data.te1 - TMU_DC_VALUE
-				- thresh_temp_adc;
-	trip_temp_adc	= set_trip_temp + tz->data.te1 - TMU_DC_VALUE
-				- thresh_temp_adc;
-	pr_info("Compensated Threshold: 0x%2x\n", thresh_temp_adc);
+	thr_temp_adc	= set_thr_temp + tz->data.te1 - TMU_DC_VALUE - thresh_temp_adc;
+	warn_temp_adc   = set_warn_temp + tz->data.te1 - TMU_DC_VALUE - thresh_temp_adc;
 
+	trip_temp_adc	= set_trip_temp + tz->data.te1 - TMU_DC_VALUE - thresh_temp_adc;
+	pr_info("Compensated Threshold: 0x%2x\n", thresh_temp_adc);
+	
 	/* Set interrupt trigger level */
 	__raw_writel(thresh_temp_adc, tz->tmu_base + THRESHOLD_TEMP);
 	__raw_writel(thr_temp_adc, tz->tmu_base + TRG_LEV0);
@@ -278,7 +328,7 @@ static void tmu_start_testmode(struct platform_device *pdev)
 		__raw_readl(tz->tmu_base + TRG_LEV2),
 		__raw_readl(tz->tmu_base + TRG_LEV3));
 
-	mdelay(50);
+	mdelay(50);    
 	/* TMU core enable */
 	con = __raw_readl(tz->tmu_base + TMU_CON0);
 	con |= TMU_EN;
@@ -287,8 +337,28 @@ static void tmu_start_testmode(struct platform_device *pdev)
 
 	/*LEV0 LEV1 LEV2 interrupt enable */
 	__raw_writel(INTEN0 | INTEN1 | INTEN2, tz->tmu_base + INTEN);
-
+	
 	return;
+}
+
+static void tq0_poll_timer(struct work_struct *work)
+{
+	int cur_temp;
+
+	/* Compensation temperature */
+	cur_temp = (__raw_readl(tmu_info->ctz->tmu_base + CURRENT_TEMP) & 0xff)
+			- tmu_info->ctz->data.te1 + TMU_DC_VALUE;
+	if (cur_temp < 25) {
+		/* temperature code range is from 25 to 125 */
+		pr_info("current temp is  under 25 celsius degree!\n");
+		cur_temp = 0;
+	}
+
+	pr_info("current temp at tq0 interrupt = %d\n", cur_temp);
+
+	/* clear pendig bit */
+	//__raw_writel(0x8, S5PV310_VA_GPIO2 + 0xA20);
+	enable_irq(irq_tq0);
 }
 #endif
 
@@ -306,12 +376,62 @@ static void set_refresh_rate(unsigned int auto_refresh)
 	__raw_writel(auto_refresh, S5P_VA_DMC1 + TIMMING_AREF);
 }
 
+static unsigned int tq0_signal_handle_init(void);
+
+#ifdef CONFIG_TMU_DEBUG_ENABLE
+static irqreturn_t tq0_signal_isr(int irq, void *id)
+{
+	unsigned int status, data;
+
+	/* disable interrupt */
+	disable_irq_nosync(irq_tq0);
+
+	/* Read EXT_INT29 pending register */
+	status = __raw_readl(S5PV310_VA_GPIO2 + 0xA20);
+	pr_info("tq0 status: 0x%02x\n", status);
+
+	/* check tq0 input */
+	data = __raw_readl(S5PV310_VA_GPIO2 + 0x104);
+	pr_info("tq0 input : 0x%02x\n", data);
+
+	if (data & 0x8) {
+		set_refresh_rate(AUTO_REFRESH_PERIOD_TQ0);
+		set_irq_type(gpio_to_irq(S5PV310_GPL2(3)), IRQ_TYPE_LEVEL_LOW);
+	} else {
+		set_refresh_rate(AUTO_REFRESH_PERIOD_NORMAL);
+		set_irq_type(gpio_to_irq(S5PV310_GPL2(3)), IRQ_TYPE_LEVEL_HIGH);
+	}
+
+	if (set_tq0_period != 2000) {
+		/* rescheduling next work */
+		queue_delayed_work_on(0, tmu_monitor_wq, &tq0_polling_work,
+			usecs_to_jiffies(set_tq0_period * 1000));
+
+	} else {
+		/* rescheduling next work */
+		queue_delayed_work_on(0, tmu_monitor_wq, &tq0_polling_work,
+			tmu_info->sampling_rate * 2);
+	}
+
+	/* clear interrupt source */
+	__raw_writel(status, S5PV310_VA_GPIO2 + 0xA20);
+
+	return IRQ_HANDLED;
+}
+
+static struct irqaction tq0_signal_irq = {
+	.name       = "tq0 singal handler",
+	.flags      = IRQF_SHARED,
+	.handler    = tq0_signal_isr,
+};
+#endif
+
 static int tmu_tripped_cb(int state)
 {
 	struct power_supply *psy = power_supply_get_by_name("battery");
 	union power_supply_propval value;
 
-	if (!psy) {
+	if(!psy) {
 		pr_err("%s:fail to get batter ps\n", __func__);
 		return -ENODEV;
 	}
@@ -345,8 +465,7 @@ static void tmu_mon_timer(struct work_struct *work)
 	int cur_temp;
 
 	/* Compensation temperature */
-	cur_temp_adc =
-		__raw_readl(tmu_info->ctz->tmu_base + CURRENT_TEMP) & 0xff;
+	cur_temp_adc = __raw_readl(tmu_info->ctz->tmu_base + CURRENT_TEMP) & 0xff;
 	cur_temp = cur_temp_adc - tmu_info->ctz->data.te1 + TMU_DC_VALUE;
 	if (cur_temp < 25) {
 		/* temperature code range is from 25 to 125 */
@@ -354,21 +473,21 @@ static void tmu_mon_timer(struct work_struct *work)
 		cur_temp = 0;
 	}
 
-	pr_info("cur temp = %d, adc_value = 0x%02x\n", cur_temp, cur_temp_adc);
+	pr_info("current temp = %d, adc_value = %d\n", cur_temp, cur_temp_adc);
 
 	if (set_tmu_test) {
-		pr_info("Current: %d c, Cooling: %d c, Throttling: %d c, \
-				Warning: %d c, Tripping: %d c\n",
+		pr_info("Current: %d c, Cooling: %d c, Throttling: %d c, Warning: %d c, Tripping: %d c\n",
 			cur_temp, tmu_info->temp->thr_low,
 			set_thr_temp, set_warn_temp, set_trip_temp);
 	} else {
-		pr_info("Current: %d c, Cooling: %d c  Throttling: %d c \
-				Warning: %d c  Tripping: %d c\n",
+		pr_info("Current: %d c, Cooling: %d c  Throttling: %d c Warning: %d c  Tripping: %d c\n",
 			cur_temp, tmu_info->temp->thr_low,
 	 		TEMP_TROTTLED_CELCIUS,
 			TEMP_WARNING_CELCIUS,
 			TEMP_TRIPPED_CELCIUS);
 	}
+	/* check tq0 input */
+	pr_info("tq0 input polling: 0x%02x\n", __raw_readl(S5PV310_VA_GPIO2 + 0x104));
 
 	queue_delayed_work_on(0, tmu_monitor_wq, &tmu_info->monitor_work,
 			tmu_info->monitor_period);
@@ -389,8 +508,7 @@ static void tmu_poll_testmode(void)
 	trip_temp = set_trip_temp;
 
 	/* Compensation temperature */
-	cur_temp_adc =
-		__raw_readl(tmu_info->ctz->tmu_base + CURRENT_TEMP) & 0xff;
+	cur_temp_adc = __raw_readl(tmu_info->ctz->tmu_base + CURRENT_TEMP) & 0xff;
 	cur_temp = cur_temp_adc - tmu_info->ctz->data.te1 + TMU_DC_VALUE;
 	if (cur_temp < 25) {
 		/* temperature code range is from 25 to 125 */
@@ -398,8 +516,7 @@ static void tmu_poll_testmode(void)
 		cur_temp = 0;
 	}
 
-	pr_info("current temp = %d, tmu_state = %d\n",
-			cur_temp, tmu_info->ctz->data.tmu_flag);
+	pr_info("current temp = %d, tmu_state = %d\n", cur_temp, tmu_info->ctz->data.tmu_flag);
 
 	switch (tmu_info->ctz->data.tmu_flag) {
 	case TMU_STATUS_NORMAL:
@@ -409,35 +526,32 @@ static void tmu_poll_testmode(void)
 				pr_err("Error inform to battery driver !\n");
 			else
 				pr_info("normal: interrupt enable.\n");
-
+	
 			/* To prevent from interrupt by current pending bit */
-			__raw_writel(INTCLEARALL,
-					tmu_info->ctz->tmu_base + INTCLEAR);
-			enable_irq(tmu_info->irq);
+			__raw_writel(INTCLEARALL, tmu_info->ctz->tmu_base + INTCLEAR);
+			enable_irq(irq_tmu);
 			return;
 		}
 
 		if (cur_temp >= set_thr_temp) { /* 85 */
 			tmu_info->ctz->data.tmu_flag = TMU_STATUS_THROTTLED;
-			s5pv310_cpufreq_upper_limit(DVFS_LOCK_ID_TMU, CPU_L2);
+			s5pv310_cpufreq_upper_limit(DVFS_LOCK_ID_TMU, CPU_L2); /* CPU_L2 */
 			cpufreq_limited_thr = 1;
-			if (tmu_tripped_cb(TMU_STATUS_THROTTLED) < 0)
+			if (tmu_tripped_cb(TMU_STATUS_THROTTLED) < 0) 
 				pr_err("Error inform to battery driver !\n");
 			else
-				pr_info("normal->throttle:\
-						set cpufreq upper limit.\n");
+				pr_info("normal->throttle: set cpufreq upper limit.\n");
 		}
 		break;
 
 	case TMU_STATUS_THROTTLED:
-		if (cur_temp >= set_thr_temp && !(cpufreq_limited_thr)) {
-			s5pv310_cpufreq_upper_limit(DVFS_LOCK_ID_TMU, CPU_L2);
+		if (cur_temp >= set_thr_temp && !(cpufreq_limited_thr)) { /* 85 */
+			s5pv310_cpufreq_upper_limit(DVFS_LOCK_ID_TMU, CPU_L2); /* CPU_L2 */
 			cpufreq_limited_thr = 1;
-			if (tmu_tripped_cb(TMU_STATUS_THROTTLED) < 0)
+			if (tmu_tripped_cb(TMU_STATUS_THROTTLED) < 0) 
 				pr_err("Error inform to battery driver !\n");
 			else
-				pr_info("throttling:\
-						set cpufreq upper limit.\n");
+				pr_info("throttling: set cpufreq upper limit.\n");
 		}
 
 		if (cur_temp <= tmu_info->temp->thr_low) {
@@ -452,19 +566,16 @@ static void tmu_poll_testmode(void)
 			s5pv310_cpufreq_upper_limit_free(DVFS_LOCK_ID_TMU);
 			cpufreq_limited_thr = 0;
 			if (set_cpu_level == 3)
-				s5pv310_cpufreq_upper_limit(DVFS_LOCK_ID_TMU,
-						CPU_L3); /* CPU_L3 */
+				s5pv310_cpufreq_upper_limit(DVFS_LOCK_ID_TMU, CPU_L3); /* CPU_L4 */
 			else
-				s5pv310_cpufreq_upper_limit(DVFS_LOCK_ID_TMU,
-						CPU_L4); /* CPU_L4 */
+				s5pv310_cpufreq_upper_limit(DVFS_LOCK_ID_TMU, CPU_L4); /* CPU_L4 */
 
 			cpufreq_limited_warn = 1;
-			if (tmu_tripped_cb(TMU_STATUS_WARNING) < 0)
+			if (tmu_tripped_cb(TMU_STATUS_WARNING) < 0) 
 				pr_err("Error inform to battery driver !\n");
 			else
-				pr_info("throttling->warning:\
-						up cpufreq upper limit.\n");
-		}
+				pr_info("throttling->warning: up cpufreq upper limit.\n");
+		}	
 		break;
 
 	case TMU_STATUS_WARNING:
@@ -472,14 +583,12 @@ static void tmu_poll_testmode(void)
 			s5pv310_cpufreq_upper_limit_free(DVFS_LOCK_ID_TMU);
 			cpufreq_limited_thr = 0;
 			if (set_cpu_level == 3)
-				s5pv310_cpufreq_upper_limit(DVFS_LOCK_ID_TMU,
-						CPU_L3); /* CPU_L3 */
+				s5pv310_cpufreq_upper_limit(DVFS_LOCK_ID_TMU, CPU_L3); /* CPU_L4 */
 			else
-				s5pv310_cpufreq_upper_limit(DVFS_LOCK_ID_TMU,
-						CPU_L4); /* CPU_L4 */
-
+				s5pv310_cpufreq_upper_limit(DVFS_LOCK_ID_TMU, CPU_L4); /* CPU_L4 */
+			
 			cpufreq_limited_warn = 1;
-			if (tmu_tripped_cb(TMU_STATUS_WARNING) < 0)
+			if (tmu_tripped_cb(TMU_STATUS_WARNING) < 0) 
 				pr_err("Error inform to battery driver !\n");
 			else
 				pr_info("warning: set cpufreq upper limit.\n");
@@ -490,14 +599,12 @@ static void tmu_poll_testmode(void)
 			tmu_info->ctz->data.tmu_flag = TMU_STATUS_THROTTLED;
 			s5pv310_cpufreq_upper_limit_free(DVFS_LOCK_ID_TMU);
 			cpufreq_limited_warn = 0;
-			s5pv310_cpufreq_upper_limit(DVFS_LOCK_ID_TMU,
-					CPU_L2); /* CPU_L2 */
+			s5pv310_cpufreq_upper_limit(DVFS_LOCK_ID_TMU, CPU_L2); /* CPU_L2 */
 			cpufreq_limited_thr = 1;
 			if (tmu_tripped_cb(TMU_STATUS_THROTTLED) < 0)
 				pr_err("Error inform to battery driver !\n");
 			else
-				pr_info("warning->throttling:\
-						down cpufreq upper limit.\n");
+				pr_info("warning->throttling: down cpufreq upper limit.\n");
 		}
 
 		if (cur_temp >= set_trip_temp) { /* 110 */
@@ -505,23 +612,23 @@ static void tmu_poll_testmode(void)
 			if (tmu_tripped_cb(TMU_STATUS_TRIPPED) < 0)
 				pr_err("Error inform to battery driver !\n");
 			else
-				pr_info("warning->tripping:\
-						waiting shutdown !!!\n");
+				pr_info("warning->tripping: waiting shutdown !!!\n");
 		}
 		break;
 
 	case TMU_STATUS_INIT: /* sned tmu initial status to battery drvier */
-		disable_irq(tmu_info->irq);
+		disable_irq(irq_tmu);
 
-		if (cur_temp <= tmu_info->temp->thr_low)
+		if (cur_temp <= tmu_info->temp->thr_low) {
 			tmu_info->ctz->data.tmu_flag = TMU_STATUS_NORMAL;
-		else
+		} else {
 			tmu_info->ctz->data.tmu_flag = TMU_STATUS_THROTTLED;
+		}
 		break;
 
-	case TMU_STATUS_TRIPPED:
-		if (cur_temp >= set_trip_temp && !(send_msg_battery)) {
-			if (tmu_tripped_cb(TMU_STATUS_TRIPPED) < 0)
+	case TMU_STATUS_TRIPPED:  
+		if (cur_temp >= set_trip_temp && !(send_msg_battery)) { /* 110 */
+			if (tmu_tripped_cb(TMU_STATUS_TRIPPED) < 0) 
 				pr_err("Error inform to battery driver !\n");
 			else {
 				pr_info("tripping: waiting shutdown.\n");
@@ -529,14 +636,13 @@ static void tmu_poll_testmode(void)
 			}
 		}
 
+		//if (cur_temp >= (TEMP_MAX_CELCIUS - 5)) {
 		if (cur_temp >= (set_trip_temp + 5)) {
-			panic("Emergency!!!!\
-				tmu tripping event is not treated! \n");
+			panic("Emergency!!!! tmu tripping event is not treated! \n");
 		}
 
 		if (cur_temp >= tmu_info->temp->trip_retry) {
-			pr_warn("WARNING!!: try to send msg to\
-					battery driver again\n");
+			pr_warn("WARNING!!: try to send msg to battery driver again\n");
 			send_msg_battery = 0;
 		}
 
@@ -545,8 +651,7 @@ static void tmu_poll_testmode(void)
 			s5pv310_cpufreq_upper_limit_free(DVFS_LOCK_ID_TMU);
 			tmu_info->ctz->data.tmu_flag = TMU_STATUS_NORMAL;
 			cpufreq_limited_thr = 0;
-			pr_info("tripping->normal:\
-					check! occured only test mode.\n");
+			pr_info("tripping->normal: check! occured only test mode.\n");
 		}
 		break;
 
@@ -557,22 +662,50 @@ static void tmu_poll_testmode(void)
 		} else {
 			tmu_info->ctz->data.tmu_flag = TMU_STATUS_TRIPPED;
 			if (tmu_tripped_cb(TMU_STATUS_TRIPPED) < 0)
-				pr_err("Error inform to battery driver !\n");
+				pr_err( "Error inform to battery driver !\n");
 		}
 		break;
+
 	}
 
-	if (cur_temp >= tmu_info->temp->tq0_temp) {
-		if (!(auto_refresh_changed)) {
-			pr_info("set auto_refresh 1.95us\n");
-			set_refresh_rate(AUTO_REFRESH_PERIOD_TQ0);
-			auto_refresh_changed = 1;
+	if (set_tq0_mode == 1) {
+		if (cur_temp >= tmu_info->temp->tq0_temp) {
+			if (!(auto_refresh_changed)) {
+				pr_info("set auto_refresh 1.95us\n");
+				set_refresh_rate(AUTO_REFRESH_PERIOD_TQ0);
+				auto_refresh_changed = 1;
+			}
 		}
-	} else if (cur_temp <= (tmu_info->temp->tq0_temp - 5)) {
-		if (auto_refresh_changed) {
-			pr_info("set auto_refresh 3.9us\n");
-			set_refresh_rate(AUTO_REFRESH_PERIOD_NORMAL);
-			auto_refresh_changed = 0;
+		//if (cur_temp <= (TEMP_TQ0_CELCIUS - 5)) {
+		if (cur_temp <= (tmu_info->temp->tq0_temp - 5)) {
+			if (auto_refresh_changed) {
+				pr_info("set auto_refresh 3.9us\n");
+				set_refresh_rate(AUTO_REFRESH_PERIOD_NORMAL);
+				auto_refresh_changed = 0;
+			}
+		}
+		/* check tq0 input */
+		pr_info("tq0 input : 0x%02x\n", __raw_readl(S5PV310_VA_GPIO2 + 0x104));
+
+	} else if (set_tq0_mode == 3) { /* autor refresh change by tq0 input value */
+		unsigned int data;
+
+		/* check tq0 input */
+		data = __raw_readl(S5PV310_VA_GPIO2 + 0x104);
+		data = data & (1<<3);
+
+		if (data) {
+			if (!(auto_refresh_changed)) {
+				pr_info("set auto_refresh 1.95us : 0x%08x", data);
+				set_refresh_rate(AUTO_REFRESH_PERIOD_TQ0);
+				auto_refresh_changed = 1;
+			}
+		} else {
+			if (auto_refresh_changed) {
+				pr_info("set auto_refresh 3.9us : 0x%08x", data);
+				set_refresh_rate(AUTO_REFRESH_PERIOD_NORMAL);
+				auto_refresh_changed = 0;
+			}
 		}
 	}
 
@@ -596,6 +729,7 @@ static void tmu_poll_timer(struct work_struct *work)
 		return;
 	}
 #endif
+
 	mutex_lock(&tmu_lock);
 
 	/* Compensation temperature */
@@ -606,53 +740,48 @@ static void tmu_poll_timer(struct work_struct *work)
 		pr_info("current temp is under 25 celsius degree!\n");
 		cur_temp = 0;
 	}
-	pr_info("current temp = %d, tmu_state = %d\n",
-			cur_temp, tmu_info->ctz->data.tmu_flag);
+	pr_info("current temp = %d, tmu_state = %d\n", cur_temp, tmu_info->ctz->data.tmu_flag);
 
 	switch (tmu_info->ctz->data.tmu_flag) {
 	case TMU_STATUS_NORMAL:
 		if (cur_temp <= tmu_info->temp->thr_low) {
+			//cancel_delayed_work(&tmu_info->polling_work);
 			if (tmu_tripped_cb(TMU_STATUS_NORMAL) < 0) 
 				pr_err("Error inform to battery driver !\n");
 			else
 				pr_info("normal: interrupt enable.\n");
 
 			/* clear to prevent from interfupt by peindig bit */
-			__raw_writel(INTCLEARALL,
-					tmu_info->ctz->tmu_base + INTCLEAR);
-			enable_irq(tmu_info->irq);
+			__raw_writel(INTCLEARALL, tmu_info->ctz->tmu_base + INTCLEAR);
+			enable_irq(irq_tmu);
 			mutex_unlock(&tmu_lock);
 			return;
 		}
 		if (cur_temp >= TEMP_TROTTLED_CELCIUS) { /* 87 */
 			tmu_info->ctz->data.tmu_flag = TMU_STATUS_THROTTLED;
-			s5pv310_cpufreq_upper_limit(DVFS_LOCK_ID_TMU, CPU_L2);
+			s5pv310_cpufreq_upper_limit(DVFS_LOCK_ID_TMU, CPU_L2); /*CPU_L2 */
 			cpufreq_limited_thr = 1;
-			if (tmu_tripped_cb(TMU_STATUS_THROTTLED) < 0)
+			if (tmu_tripped_cb(TMU_STATUS_THROTTLED) < 0) 
 				pr_err("Error inform to battery driver !\n");
 			else
-				pr_info("normal->throttle:\
-						set cpufreq upper limit.\n");
+				pr_info("normal->throttle: set cpufreq upper limit.\n");
 		}
 		break;
 
 	case TMU_STATUS_THROTTLED:
-		if (cur_temp >= TEMP_TROTTLED_CELCIUS &&
-				!(cpufreq_limited_thr)) {
-			s5pv310_cpufreq_upper_limit(DVFS_LOCK_ID_TMU, CPU_L2);
+		if (cur_temp >= TEMP_TROTTLED_CELCIUS && !(cpufreq_limited_thr)) { /* 87 */
+			s5pv310_cpufreq_upper_limit(DVFS_LOCK_ID_TMU, CPU_L2); /* CPU_L2 */
 			cpufreq_limited_thr = 1;
-			if (tmu_tripped_cb(TMU_STATUS_THROTTLED) < 0)
+			if (tmu_tripped_cb(TMU_STATUS_THROTTLED) < 0) 
 				pr_err("Error inform to battery driver !\n");
 			else
-				pr_info("throttling:\
-						set cpufreq upper limit.\n");
+				pr_info("throttling: set cpufreq upper limit.\n");
 		}
 		if (cur_temp <= tmu_info->temp->thr_low) {
 			s5pv310_cpufreq_upper_limit_free(DVFS_LOCK_ID_TMU);
 			tmu_info->ctz->data.tmu_flag = TMU_STATUS_NORMAL;
 			cpufreq_limited_thr = 0;
-			pr_info("throttling->normal:\
-					free cpufreq upper limit.\n");
+			pr_info("throttling->normal: free cpufreq upper limit.\n");
 		}
 		if (cur_temp >= TEMP_WARNING_CELCIUS) { /* 103 */
 			tmu_info->ctz->data.tmu_flag = TMU_STATUS_WARNING;
@@ -660,23 +789,21 @@ static void tmu_poll_timer(struct work_struct *work)
 			cpufreq_limited_thr = 0;
 			s5pv310_cpufreq_upper_limit(DVFS_LOCK_ID_TMU, CPU_L4); /* CPU_L4 */
 			cpufreq_limited_warn = 1;
-			if (tmu_tripped_cb(TMU_STATUS_WARNING) < 0)
+			if (tmu_tripped_cb(TMU_STATUS_WARNING) < 0) 
 				pr_err("Error inform to battery driver !\n");
 			else
-				pr_info("throttling->warning:\
-						set cpufreq upper limit.\n");
+				pr_info("throttling->warning: set cpufreq upper limit.\n");
 		}		
 		break;
 
 	case TMU_STATUS_WARNING:
-		if (cur_temp >= TEMP_WARNING_CELCIUS &&
-				!(cpufreq_limited_warn)) { /* 103 */
+		if (cur_temp >= TEMP_WARNING_CELCIUS && !(cpufreq_limited_warn)) { /* 103 */
 			s5pv310_cpufreq_upper_limit_free(DVFS_LOCK_ID_TMU);
 			cpufreq_limited_thr = 0;
-			s5pv310_cpufreq_upper_limit(DVFS_LOCK_ID_TMU, CPU_L4);
+			s5pv310_cpufreq_upper_limit(DVFS_LOCK_ID_TMU, CPU_L4); /* CPU_L4 */
 
 			cpufreq_limited_warn = 1;
-			if (tmu_tripped_cb(TMU_STATUS_WARNING) < 0)
+			if (tmu_tripped_cb(TMU_STATUS_WARNING) < 0) 
 				pr_err("Error inform to battery driver !\n");
 			else
 				pr_info("warning: set cpufreq upper limit.\n");
@@ -685,28 +812,26 @@ static void tmu_poll_timer(struct work_struct *work)
 			tmu_info->ctz->data.tmu_flag = TMU_STATUS_THROTTLED;
 			s5pv310_cpufreq_upper_limit_free(DVFS_LOCK_ID_TMU);
 			cpufreq_limited_warn = 0;
-			s5pv310_cpufreq_upper_limit(DVFS_LOCK_ID_TMU, CPU_L2);
+			s5pv310_cpufreq_upper_limit(DVFS_LOCK_ID_TMU, CPU_L2); /* CPU_L2 */
 			cpufreq_limited_thr = 1;
 			if (tmu_tripped_cb(TMU_STATUS_THROTTLED) < 0)
 				pr_err("Error inform to battery driver !\n");
 			else
-				pr_info("warning->throttling:\
-						up cpufreq upper limit.\n");
+				pr_info("warning->throttling: up cpufreq upper limit.\n");
 		}
 		if (cur_temp >= TEMP_TRIPPED_CELCIUS) { /* 110 */
 			tmu_info->ctz->data.tmu_flag = TMU_STATUS_TRIPPED;
 			if (tmu_tripped_cb(TMU_STATUS_TRIPPED) < 0)
-				pr_err("Error inform to battery driver !\n");
+				pr_err( "Error inform to battery driver !\n");
 			else
-				pr_info("warning->tripping:\
-						waiting shutdown !!!\n");
+				pr_info("warning->tripping: waiting shutdown !!!\n");
 		}
 		break;
 
-	case TMU_STATUS_TRIPPED:
-		/* 1st throttling 110 */
-		if (cur_temp >= TEMP_TRIPPED_CELCIUS && !(send_msg_battery)) {
-			if (tmu_tripped_cb(TMU_STATUS_TRIPPED) < 0)
+
+	case TMU_STATUS_TRIPPED:  
+		if (cur_temp >= TEMP_TRIPPED_CELCIUS && !(send_msg_battery)) { /* 110 */
+			if (tmu_tripped_cb(TMU_STATUS_TRIPPED) < 0) 
 				pr_err("Error inform to battery driver !\n");
 			else {
 				pr_info("tripping: waiting shutdown.\n");
@@ -714,13 +839,11 @@ static void tmu_poll_timer(struct work_struct *work)
 			}
 		}
 		if (cur_temp >= (TEMP_MAX_CELCIUS - 5)) { /* 120 */
-			panic("Emergency!!!!\
-					tmu tripping event is not treated! \n");
+			panic("Emergency!!!! tmu tripping event is not treated! \n");
 		}
 
 		if (cur_temp >= tmu_info->temp->trip_retry) {
-			pr_warn("WARNING!!: try to send msg to\
-					battery driver again\n");
+			pr_warn("WARNING!!: try to send msg to battery driver again\n");
 			send_msg_battery = 0;
 		}
 
@@ -729,18 +852,18 @@ static void tmu_poll_timer(struct work_struct *work)
 			s5pv310_cpufreq_upper_limit_free(DVFS_LOCK_ID_TMU);
 			tmu_info->ctz->data.tmu_flag = TMU_STATUS_NORMAL;
 			cpufreq_limited_thr = 0;
-			pr_info("tripping->normal:\
-					Check! occured only test mode.\n");
+			pr_info("tripping->normal: Check! occured only test mode.\n");
 		}
 		break;
 
 	case TMU_STATUS_INIT: /* sned tmu initial status to battery drvier */
-		disable_irq(tmu_info->irq);
+		disable_irq(irq_tmu);
 
-		if (cur_temp <= tmu_info->temp->thr_low)
+		if (cur_temp <= tmu_info->temp->thr_low) {
 			tmu_info->ctz->data.tmu_flag = TMU_STATUS_NORMAL;
-		else
+		} else {
 			tmu_info->ctz->data.tmu_flag = TMU_STATUS_THROTTLED;
+		}
 		break;
 
 	default:
@@ -750,24 +873,28 @@ static void tmu_poll_timer(struct work_struct *work)
 		} else {
 			tmu_info->ctz->data.tmu_flag = TMU_STATUS_TRIPPED;
 			if (tmu_tripped_cb(TMU_STATUS_TRIPPED) < 0) 
-				pr_err("Error inform to battery driver !\n");
+				pr_err( "Error inform to battery driver !\n");
 		}
 		break;
 	} /* end */
 
-	if (cur_temp >= TEMP_TQ0_CELCIUS) { /* 85 */
+	if (cur_temp >= TEMP_TQ0_CELCIUS) { /* 90 */
 		if (!(auto_refresh_changed)) {
 			pr_info("set auto_refresh 1.95us\n");
 			set_refresh_rate(AUTO_REFRESH_PERIOD_TQ0);
 			auto_refresh_changed = 1;
 		}
-	} else if (cur_temp <= (TEMP_TQ0_CELCIUS - 5)) { /* 80 */
+	}
+	if (cur_temp <= (TEMP_TQ0_CELCIUS - 5)) { /* 85 */
 		if (auto_refresh_changed) {
 			pr_info("set auto_refresh 3.9us\n");
 			set_refresh_rate(AUTO_REFRESH_PERIOD_NORMAL);
 			auto_refresh_changed = 0;
 		}
 	}
+	/* read tq0 input */
+	/* pr_info("tq0 input : 0x%02x\n", __raw_readl(S5PV310_VA_GPIO2 + 0x104));
+	*/
 
 	/* rescheduling next work */
 	queue_delayed_work_on(0, tmu_monitor_wq, &tmu_info->polling_work,
@@ -801,11 +928,12 @@ static int tmu_initialize(struct platform_device *pdev)
 	pr_info("%s: te_temp = 0x%08x, low 8bit = %d, high 24 bit = %d\n",
 			__func__, te_temp, tz->data.te1, tz->data.te2);
 
-	if ((EFUSE_MIN_VALUE > tz->data.te1) || (tz->data.te1 > EFUSE_MAX_VALUE)
+	if((EFUSE_MIN_VALUE > tz->data.te1) || (tz->data.te1 > EFUSE_MAX_VALUE)
 		||  (tz->data.te2 != 0))
-		tz->data.te1 = EFUSE_AVG_VALUE;
 
-	/* Need to initial regsiter setting after getting parameter info */
+	tz->data.te1 = EFUSE_AVG_VALUE;
+
+	/* Need to initail regsiter setting after getting parameter info */
 	/* [28:23] vref [11:8] slope - Tunning parameter */
 	__raw_writel(VREF_SLOPE, tz->tmu_base + TMU_CON0);
 
@@ -827,15 +955,6 @@ static void tmu_start(struct platform_device *pdev)
 	}
 #endif
 
-	pr_info("1st throttling stop_temp  = %d, start_temp = %d\n\
-		2nd throttling stop_temp = %d, start_tmep = %d\n\
-		tripping temp = %d, tripping retry_temp = %d\n\
-		memory throttling stop_temp = %d, start_temp = %d\n",
-		tmu_info->temp->thr_low, tmu_info->temp->thr_high - 4,
-		tmu_info->temp->warn_low, tmu_info->temp->warn_high - 3,
-		tmu_info->temp->trip_retry - 3, tmu_info->temp->trip_retry,
-		tmu_info->temp->tq0_temp -5, tmu_info->temp->tq0_temp);
-
 	/* Compensation temperature THD_TEMP */
 	thresh_temp_adc = THD_TEMP + tz->data.te1 - TMU_CODE_25_DEGREE;
 	pr_info("Compensated Threshold: 0x%2x\n", thresh_temp_adc);
@@ -847,7 +966,7 @@ static void tmu_start(struct platform_device *pdev)
 	__raw_writel(TRIGGER_LEV2, tz->tmu_base + TRG_LEV2);
 	__raw_writel(TRIGGER_LEV3, tz->tmu_base + TRG_LEV3);
 
-	mdelay(50);
+	mdelay(50);    
 	/* TMU core enable */
 	con = __raw_readl(tz->tmu_base + TMU_CON0);
 	con |= TMU_EN;
@@ -872,7 +991,7 @@ static irqreturn_t s5p_tmu_irq(int irq, void *id)
 	unsigned int status;
 
 	disable_irq_nosync(irq);
-
+	
 	status = __raw_readl(tz->tmu_base + INTSTAT);
 
 	pr_info("TMU interrupt occured : status = 0x%08x\n", status);
@@ -880,17 +999,20 @@ static irqreturn_t s5p_tmu_irq(int irq, void *id)
 	if (status & INTSTAT2) {
 		tz->data.tmu_flag = TMU_STATUS_TRIPPED;
 		__raw_writel(INTCLEAR2, tz->tmu_base + INTCLEAR);
-	} else if (status & INTSTAT1) {
+	}
+	else if (status & INTSTAT1) {
 		tz->data.tmu_flag = TMU_STATUS_WARNING;
 		__raw_writel(INTCLEAR1, tz->tmu_base + INTCLEAR);
-	} else if (status & INTSTAT0) {
+	}
+	else if (status & INTSTAT0) {
 		tz->data.tmu_flag = TMU_STATUS_THROTTLED;
 		__raw_writel(INTCLEAR0, tz->tmu_base + INTCLEAR);
-	} else {
+	}
+	else {
 		pr_err("%s: TMU interrupt error\n", __func__);
 		__raw_writel(INTCLEARALL, tz->tmu_base + INTCLEAR);
-		queue_delayed_work_on(0, tmu_monitor_wq,
-			&tmu_info->polling_work, tmu_info->sampling_rate / 2);
+	        queue_delayed_work_on(0, tmu_monitor_wq, &tmu_info->polling_work,
+			tmu_info->sampling_rate / 2);
 		return -ENODEV;
 	}
 
@@ -910,7 +1032,7 @@ static int __devinit s5p_tmu_probe(struct platform_device *pdev)
 
 	tmu_info = kzalloc(sizeof(struct s5p_tmu_info), GFP_KERNEL);
 	if (!tmu_info) {
-		dev_err(&pdev->dev, "failed to alloc memory!\n");
+		pr_err("%s: failed to alloc memory!\n", __func__);
 		ret = -ENOMEM;
 		goto err_nomem;
 	}
@@ -918,53 +1040,83 @@ static int __devinit s5p_tmu_probe(struct platform_device *pdev)
 	tmu_info->ctz = tz;
 	tmu_info->ctz->data.tmu_flag = TMU_STATUS_INIT;
 	tmu_info->temp = &tmu_temp_band;
-	/* To poll current temp, set sampling rate to ONE second sampling */
-	tmu_info->sampling_rate  = usecs_to_jiffies(1000 * 1000);
 
-	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	if (!res) {
-		dev_err(&pdev->dev, "failed to get memory region resource\n");
-		ret = -ENODEV;
-		goto err_nores;
+	irq_tmu = platform_get_irq(pdev, 0);
+	if (irq_tmu < 0) {
+		dev_err(&pdev->dev, "no irq for thermal\n");
+		return -ENOENT;
 	}
 
-	tmu_info->ioarea = request_mem_region(res->start,
+	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+	if (res == NULL) {
+		dev_err(&pdev->dev, "failed to get memory region resource\n");
+		return -ENOENT;
+	}
+
+	s5p_tmu_mem = request_mem_region(res->start,
 					res->end-res->start+1,
 					pdev->name);
-	if (!(tmu_info->ioarea)) {
+	if (s5p_tmu_mem == NULL) {
 		dev_err(&pdev->dev, "failed to reserve memory region\n");
-		ret = -EBUSY;
+		ret = -ENOENT;
 		goto err_nores;
 	}
 
 	tz->tmu_base = ioremap(res->start, (res->end - res->start) + 1);
-	if (!(tz->tmu_base)) {
+	if (tz->tmu_base == NULL) {
 		dev_err(&pdev->dev, "failed ioremap()\n");
 		ret = -EINVAL;
 		goto err_nomap;
 	}
 
-	tmu_monitor_wq = create_freezeable_workqueue(dev_name(&pdev->dev));
-	if (!tmu_monitor_wq) {
-		pr_info("Creation of tmu_monitor_wq failed\n");
-		return -EFAULT;
+#ifdef CONFIG_TMU_DEBUG_ENABLE
+	if (set_tmu_test) {
+		tmu_info->temp->thr_low		 = set_thr_stop;
+		tmu_info->temp->trip_retry	 = set_trip_temp + 3;
+		tmu_info->temp->thr_high	 = set_warn_temp - 5;
+		tmu_info->temp->warn_low	 = set_warn_stop; /* set_warn_temp - 5 */
+		tmu_info->temp->warn_high	 = set_warn_temp + 5;
+		tmu_info->temp->tq0_temp	 = set_tq0_temp;
+
+		pr_info("thr_stop = %d, thr_temp = %d,\
+			warn_temp = %d, trip_temp = %d, tq0_temp = %d\n",
+			set_thr_stop, set_thr_temp,
+			set_warn_temp, set_trip_temp,
+			set_tq0_temp);
+
 	}
+#endif
+
+	pr_info("thr_low: %d, thr_high: %d  warn_low: %d c warn_high %d\n",
+		tmu_info->temp->thr_low, tmu_info->temp->thr_high,
+		tmu_info->temp->warn_low, tmu_info->temp->warn_high);
+
+	tmu_monitor_wq = create_freezeable_workqueue(dev_name(&pdev->dev));
+        if (!tmu_monitor_wq) {
+                pr_info("Creation of tmu_monitor_wq failed\n");
+                return -EFAULT;
+        }
+
+	/* set sampling rate to poll current temp */
+	tmu_info->sampling_rate  = usecs_to_jiffies(1000 * 1000);  /* 1 sec sampling */
 
 #ifdef CONFIG_TMU_DEBUG_ENABLE
 	if (set_sampling_rate) {
-		tmu_info->sampling_rate =
-			usecs_to_jiffies(set_sampling_rate * 1000);
-		tmu_info->monitor_period =
-			usecs_to_jiffies(set_sampling_rate * 10 * 1000);
+		tmu_info->sampling_rate  = usecs_to_jiffies(set_sampling_rate * 1000);
+		tmu_info->monitor_period = usecs_to_jiffies(set_sampling_rate * 10 * 1000);
 	} else {
-		/* 10sec monitroing */
-		tmu_info->monitor_period = usecs_to_jiffies(10000 * 1000);
+		tmu_info->monitor_period = usecs_to_jiffies(10000 * 1000); /* 10sec monitroing */
 	}
 
-	INIT_DELAYED_WORK_DEFERRABLE(&tmu_info->monitor_work, tmu_mon_timer);
-	queue_delayed_work_on(0, tmu_monitor_wq, &tmu_info->monitor_work,
-			tmu_info->monitor_period);
+		INIT_DELAYED_WORK_DEFERRABLE(&tmu_info->monitor_work, tmu_mon_timer);
+		queue_delayed_work_on(0, tmu_monitor_wq, &tmu_info->monitor_work, tmu_info->monitor_period);
+
+	if (set_tq0_mode == 2)
+		INIT_DELAYED_WORK_DEFERRABLE(&tq0_polling_work, tq0_poll_timer);
 #endif
+
+	if (tq0_signal_handle_init())
+		pr_err("%s failed\n", __func__);
 
 	INIT_DELAYED_WORK_DEFERRABLE(&tmu_info->polling_work, tmu_poll_timer);
 
@@ -972,46 +1124,30 @@ static int __devinit s5p_tmu_probe(struct platform_device *pdev)
 	queue_delayed_work_on(0, tmu_monitor_wq, &tmu_info->polling_work,
 		tmu_info->sampling_rate * 10);
 
-	tmu_info->irq = platform_get_irq(pdev, 0);
-	if (tmu_info->irq < 0) {
-		dev_err(&pdev->dev, "no irq for thermal\n");
-		ret = tmu_info->irq;
-		goto err_irq;
-	}
-
-	ret = request_irq(tmu_info->irq, s5p_tmu_irq,
+	ret = request_irq(irq_tmu, s5p_tmu_irq,
 			IRQF_DISABLED,  "s5p-tmu interrupt", tz);
 	if (ret) {
-		dev_err(&pdev->dev, "IRQ%d error %d\n", tmu_info->irq, ret);
+		dev_err(&pdev->dev, "IRQ%d error %d\n", irq_tmu, ret);
 		goto err_irq;
 	}
 
 	ret = tmu_initialize(pdev);
 	if (ret)
-		goto err_init;
+		goto err_nores;
 
 	tmu_start(pdev);
 
 	return ret;
 
-err_init:
-	if (tmu_info->irq >= 0)
-		free_irq(tmu_info->irq, tz);
-
 err_irq:
-	iounmap(tz->tmu_base);
+	free_irq(irq_tmu, tz);
 
 err_nomap:
-	release_resource(tmu_info->ioarea);
-	kfree(tmu_info->ioarea);
-
-err_nores:
+	release_resource(s5p_tmu_mem);
 	kfree(tmu_info);
-	tmu_info = NULL;
 
 err_nomem:
-	dev_err(&pdev->dev, "initialization failed.\n");
-
+err_nores:
 	return ret;
 }
 
@@ -1019,18 +1155,13 @@ static int __devinit s5p_tmu_remove(struct platform_device *pdev)
 {
 	struct s5p_tmu *tz = platform_get_drvdata(pdev);
 
-	cancel_delayed_work(&tmu_info->polling_work);
+	free_irq(irq_tmu, (void *)pdev);
 
-	if (tmu_info->irq >= 0)
-		free_irq(tmu_info->irq, tz);
+	kfree(tmu_info);
 
 	iounmap(tz->tmu_base);
 
-	release_resource(tmu_info->ioarea);
-	kfree(tmu_info->ioarea);
-
-	kfree(tmu_info);
-	tmu_info = NULL;
+	//kfree(pdev->dev.platform_data);
 
 	pr_info("%s is removed\n", dev_name(&pdev->dev));
 	return 0;
@@ -1042,19 +1173,22 @@ static int s5p_tmu_suspend(struct platform_device *pdev, pm_message_t state)
 	struct s5p_tmu *tz = platform_get_drvdata(pdev);
 
 	/* save tmu register value */ 
-	tmu_info->reg_save[0] = __raw_readl(tz->tmu_base + TMU_CON0);
-	tmu_info->reg_save[1] = __raw_readl(tz->tmu_base + SAMPLING_INTERNAL);
-	tmu_info->reg_save[2] = __raw_readl(tz->tmu_base + CNT_VALUE0);
-	tmu_info->reg_save[3] = __raw_readl(tz->tmu_base + CNT_VALUE1);
-	tmu_info->reg_save[4] = __raw_readl(tz->tmu_base + THRESHOLD_TEMP);
-	tmu_info->reg_save[5] = __raw_readl(tz->tmu_base + INTEN);
-	tmu_info->reg_save[6] = __raw_readl(tz->tmu_base + TRG_LEV0);
-	tmu_info->reg_save[7] = __raw_readl(tz->tmu_base + TRG_LEV1);
-	tmu_info->reg_save[8] = __raw_readl(tz->tmu_base + TRG_LEV2);
-	tmu_info->reg_save[9] = __raw_readl(tz->tmu_base + TRG_LEV3);
+	tmu_save[0] = __raw_readl(tz->tmu_base + TMU_CON0);
+	tmu_save[1] = __raw_readl(tz->tmu_base + SAMPLING_INTERNAL);
+	tmu_save[2] = __raw_readl(tz->tmu_base + CNT_VALUE0);
+	tmu_save[3] = __raw_readl(tz->tmu_base + CNT_VALUE1);
+	tmu_save[4] = __raw_readl(tz->tmu_base + THRESHOLD_TEMP);
+	tmu_save[5] = __raw_readl(tz->tmu_base + INTEN);
+	tmu_save[6] = __raw_readl(tz->tmu_base + TRG_LEV0);
+	tmu_save[7] = __raw_readl(tz->tmu_base + TRG_LEV1);
+	tmu_save[8] = __raw_readl(tz->tmu_base + TRG_LEV2);
+	tmu_save[9] = __raw_readl(tz->tmu_base + TRG_LEV3);
 
-	disable_irq(tmu_info->irq);
+	disable_irq(irq_tmu);
 
+#ifdef CONFIG_TMU_DEBUG_ENABLE
+	disable_irq(irq_tq0);
+#endif
 	return 0;
 }
 
@@ -1063,19 +1197,22 @@ static int s5p_tmu_resume(struct platform_device *pdev)
 	struct s5p_tmu *tz = platform_get_drvdata(pdev);
 
 	/* save tmu register value */ 
-	__raw_writel(tmu_info->reg_save[0], tz->tmu_base + TMU_CON0);
-	__raw_writel(tmu_info->reg_save[1], tz->tmu_base + SAMPLING_INTERNAL);
-	__raw_writel(tmu_info->reg_save[2], tz->tmu_base + CNT_VALUE0);
-	__raw_writel(tmu_info->reg_save[3], tz->tmu_base + CNT_VALUE1);
-	__raw_writel(tmu_info->reg_save[4], tz->tmu_base + THRESHOLD_TEMP);
-	__raw_writel(tmu_info->reg_save[5], tz->tmu_base + INTEN);
-	__raw_writel(tmu_info->reg_save[6], tz->tmu_base + TRG_LEV0);
-	__raw_writel(tmu_info->reg_save[7], tz->tmu_base + TRG_LEV1);
-	__raw_writel(tmu_info->reg_save[8], tz->tmu_base + TRG_LEV2);
-	__raw_writel(tmu_info->reg_save[9], tz->tmu_base + TRG_LEV3);
+	__raw_writel(tmu_save[0], tz->tmu_base + TMU_CON0);
+	__raw_writel(tmu_save[1], tz->tmu_base + SAMPLING_INTERNAL);
+	__raw_writel(tmu_save[2], tz->tmu_base + CNT_VALUE0);
+	__raw_writel(tmu_save[3], tz->tmu_base + CNT_VALUE1);
+	__raw_writel(tmu_save[4], tz->tmu_base + THRESHOLD_TEMP);
+	__raw_writel(tmu_save[5], tz->tmu_base + INTEN);
+	__raw_writel(tmu_save[6], tz->tmu_base + TRG_LEV0);
+	__raw_writel(tmu_save[7], tz->tmu_base + TRG_LEV1);
+	__raw_writel(tmu_save[8], tz->tmu_base + TRG_LEV2);
+	__raw_writel(tmu_save[9], tz->tmu_base + TRG_LEV3);
+	
+	enable_irq(irq_tmu);
 
-	enable_irq(tmu_info->irq);
-
+#ifdef CONFIG_TMU_DEBUG_ENABLE
+	enable_irq(irq_tq0);
+#endif
 	return 0;
 }
 #else
@@ -1094,8 +1231,46 @@ static struct platform_driver s5p_tmu_driver = {
 	},
 };
 
+static unsigned int tq0_signal_handle_init(void)
+{
+	u32 err = 0;
+
+	pr_info("tq0_signal_handle_init");
+
+	err = gpio_request(S5PV310_GPL2(3), "GPL2");
+	if (err) {
+		pr_err("gpio request error : %d\n", err);
+	}
+
+	s3c_gpio_cfgpin(S5PV310_GPL2(3), (0xf << 12));
+
+
+#ifdef CONFIG_TMU_DEBUG_ENABLE
+	/* tq0 interrupt */
+	if (set_tq0_mode == 2) {
+		irq_tq0 = gpio_to_irq(S5PV310_GPL2(3));
+		if (irq_tq0 < 0)
+			pr_err("irq request error : %d\n", err);
+
+		/* clear interrupt source */
+		__raw_writel(0x8, S5PV310_VA_GPIO2 + 0xA20);
+
+		set_irq_type(irq_tq0, IRQ_TYPE_LEVEL_HIGH);
+		setup_irq(irq_tq0, &tq0_signal_irq);
+	}
+
+	/* eint29[3] is flter enable and filtering width */
+	/*__raw_writel(0x1 << 31 | 0x7F << 24, S5PV310_VA_GPIO2 + 0x840);
+	*/
+#endif
+	return err;
+}
+
 static int __init s5p_tmu_driver_init(void)
 {
+/*	if (tq0_signal_handle_init())
+		pr_err("%s failed\n", __func__);
+*/
 	return platform_driver_register(&s5p_tmu_driver);
 }
 

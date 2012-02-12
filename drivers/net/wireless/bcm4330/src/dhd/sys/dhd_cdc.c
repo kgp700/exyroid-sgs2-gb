@@ -564,7 +564,7 @@ dhd_preinit_ioctls(dhd_pub_t *dhd)
 	int roam_trigger[2] = {-75, WLC_BAND_ALL};
 	int roam_scan_period[2] = {10, WLC_BAND_ALL};
 	int roam_delta[2] = {10, WLC_BAND_ALL};
-	int roam_fullscan_period = 120;
+	int roam_fullscan_period = 60;
 #else
 	uint roamvar = 1;
 #endif
@@ -576,7 +576,7 @@ dhd_preinit_ioctls(dhd_pub_t *dhd)
 	uint32 glom = 0;
 	uint bcn_timeout = 12;
 	int arpoe = 1;
-	int arp_ol = 0xf;
+	int arp_ol = 0xb;
 	int scan_assoc_time = 40;
 	int scan_unassoc_time = 80;
 	int assoc_retry = 3;
@@ -585,6 +585,7 @@ dhd_preinit_ioctls(dhd_pub_t *dhd)
 	uint32 apsta = 1; /* Enable APSTA mode */
 	uint32 plcp = 0;
 #endif
+	int vlanmode = 0;
 
 	/* query for 'ver' to get version info from firmware */
 	strcpy(buf, "ver");
@@ -602,6 +603,10 @@ dhd_preinit_ioctls(dhd_pub_t *dhd)
 		return BCME_NOTUP;
 	}
 	memcpy(dhd->mac.octet, iovbuf, ETHER_ADDR_LEN);
+
+	/* VLAN mode off */	
+	bcm_mkiovar("vlan_mode", (char *)&vlanmode, 4, iovbuf, sizeof(iovbuf));
+	dhd_wl_ioctl_cmd(dhd, WLC_SET_VAR, iovbuf, sizeof(iovbuf), TRUE, 0);
 
 #ifdef SOFTAP
 	if(!ap_fw_loaded) {
@@ -696,7 +701,7 @@ dhd_preinit_ioctls(dhd_pub_t *dhd)
 	setbit(eventmask, WLC_E_NDIS_LINK);
 	setbit(eventmask, WLC_E_MIC_ERROR);
 	setbit(eventmask, WLC_E_PMKID_CACHE);
-//	setbit(eventmask, WLC_E_TXFAIL);
+	setbit(eventmask, WLC_E_TXFAIL);
 	setbit(eventmask, WLC_E_JOIN_START);
 	setbit(eventmask, WLC_E_SCAN_COMPLETE);
 #ifdef CIQ_SUPPORT
@@ -708,6 +713,10 @@ dhd_preinit_ioctls(dhd_pub_t *dhd)
 #ifdef USE_FW_TRACE
 	setbit(eventmask, WLC_E_TRACE);
 #endif
+#ifdef ROAM_DEBUG
+	setbit(eventmask, WLC_E_ROAM_START);
+	setbit(eventmask, WLC_E_ROAM_PREP);
+#endif /* ROAM_DEBUG */
 
 	bcm_mkiovar("event_msgs", eventmask, WL_EVENTING_MASK_LEN, iovbuf, sizeof(iovbuf));
 	dhd_wl_ioctl_cmd(dhd, WLC_SET_VAR, iovbuf, sizeof(iovbuf), TRUE, 0);
@@ -727,8 +736,7 @@ dhd_preinit_ioctls(dhd_pub_t *dhd)
 	dhd_wl_ioctl_cmd(dhd, WLC_SET_VAR, iovbuf, sizeof(iovbuf), TRUE, 0);
 
 #if defined(USE_KEEP_ALIVE)
-	DHD_ERROR(("%s: KEEP Alive time is 45s \n", __FUNCTION__));
-	ret = dhd_enable_keepalive(dhd, 45000); /* 45 sec */
+	ret = dhd_enable_keepalive(dhd, 60000); /* 60 sec */
 	if (ret) {
 		DHD_ERROR(("%s: Keepalive setting failure, error=%d\n", __FUNCTION__, ret));
 		/* For MFG mode */
@@ -778,7 +786,10 @@ dhd_prot_stop(dhd_pub_t *dhd)
 
 dhd_pub_t *dhd_get_pub(struct net_device *dev); /* dhd_linux.c */
 
-void dhd_set_packet_filter(int value, dhd_pub_t *dhd);
+#ifdef PKT_FILTER_SUPPORT
+extern void dhd_pktfilter_offload_set(dhd_pub_t * dhd, char *arg); /* dhd_common.c */
+extern void dhd_pktfilter_offload_enable(dhd_pub_t * dhd, char *arg, int enable, int master_mode); /* dhd_common.c */
+#endif /* PKT_FILTER_SUPPORT */
 
 int dhd_deepsleep(struct net_device *dev, int flag) 
 {
@@ -792,9 +803,19 @@ int dhd_deepsleep(struct net_device *dev, int flag)
 			DHD_ERROR(("[WiFi] Deepsleep On\n"));
 			/* give some time to _dhd_sysioc_thread() before deepsleep */
 			msleep(200);
+
+#ifdef PKT_FILTER_SUPPORT
+			/* disable pkt filter */
 			if (dhd_pkt_filter_enable && !ap_fw_loaded) {
-				dhd_set_packet_filter(0, dhdp);
+				int i;
+				for (i = 0; i < dhdp->pktfilter_count; i++) {
+					dhd_pktfilter_offload_set(dhdp, dhdp->pktfilter[i]);
+					dhd_pktfilter_offload_enable(dhdp, dhdp->pktfilter[i],
+						0, dhd_master_mode);
+				}
 			}
+#endif /* PKT_FILTER_SUPPORT */
+
 			/* Disable MPC */
 			powervar = 0;
 			bcm_mkiovar("mpc", (char *)&powervar, 4, iovbuf, sizeof(iovbuf));

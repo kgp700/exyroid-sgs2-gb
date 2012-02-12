@@ -14,9 +14,6 @@
  * any later version.
  *
  */
-#ifdef SEC_FIPS_ENABLED
-#include <linux/fips_crypto.h>
-#else
 #ifndef _LINUX_CRYPTO_H
 #define _LINUX_CRYPTO_H
 
@@ -1280,4 +1277,4 @@ static inline int crypto_comp_decompress(struct crypto_comp *tfm,
 }
 
 #endif	/* _LINUX_CRYPTO_H */
-#endif
+
