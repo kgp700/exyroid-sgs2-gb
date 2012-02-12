@@ -29,7 +29,7 @@
 #include <plat/adc.h>
 #include <mach/sec_battery.h>
 
-#define POLLING_INTERVAL	(40 * 1000)
+#define POLLING_INTERVAL	(60 * 1000)
 #define MEASURE_DSG_INTERVAL	(20 * 1000)
 #define MEASURE_CHG_INTERVAL	(3 * 1000)
 #define FULL_CHARGING_TIME	(6 * 60 * 60 * HZ)	/* 6hr */
