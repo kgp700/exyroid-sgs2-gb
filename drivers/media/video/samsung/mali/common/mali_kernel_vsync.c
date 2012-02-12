@@ -8,15 +8,22 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  */
 
-#ifndef __ARCH_CONFIG_UMP_H__
-#define __ARCH_CONFIG_UMP_H__
+#include "mali_kernel_common.h"
+#include "mali_osk.h"
+#include "mali_osk_mali.h"
+#include "mali_ukk.h"
+/*#include "mali_timestamp.h"
+*/
 
-#define ARCH_UMP_BACKEND_DEFAULT          	USING_MEMORY
-#if (USING_MEMORY == 0) /* Dedicated Memory */
-#define ARCH_UMP_MEMORY_ADDRESS_DEFAULT   	0x2C000000
-#else
-#define ARCH_UMP_MEMORY_ADDRESS_DEFAULT   	0
-#endif
+_mali_osk_errcode_t _mali_ukk_vsync_event_report(_mali_uk_vsync_event_report_s *args)
+{
+	_mali_uk_vsync_event event = (_mali_uk_vsync_event)args->event;
+	MALI_IGNORE(event); /* event is not used for release code, and that is OK */
+/*	u64 ts = _mali_timestamp_get();
+ */
 
-#define ARCH_UMP_MEMORY_SIZE_DEFAULT 		UMP_MEM_SIZE*1024*1024
-#endif /* __ARCH_CONFIG_UMP_H__ */
+	MALI_DEBUG_PRINT(4, ("Received VSYNC event: %d\n", event));
+
+	MALI_SUCCESS;
+}
+
