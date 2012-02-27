@@ -22,6 +22,14 @@ config CPU_S5PV310_EVT1
 	help
 	  Enable S5PV310 EVT1 CPU support
 
+config S5PV310_HI_ARMCLK_THAN_1_2GHZ
+	bool "Enable the higher ARM clock than 1.2GHz"
+	default n
+	help
+	  S5PV310 has different max arm clock. (i.e. 1.0GHz, 1.2GHz and 1.4GHz etc.)
+	  If you are using the chip to work at the high clock than 1.2GHz,
+	  activate this option.
+
 config USE_EXT_GIC
 	bool "Use external GIC and interrupt combiner"
 	depends on CPU_S5PV310_EVT1

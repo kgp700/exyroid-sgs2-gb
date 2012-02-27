@@ -34,7 +34,6 @@
 #include <mach/regs-gpio.h>
 #include <mach/regs-irq.h>
 #include <linux/gpio.h>
-#include <linux/cpufreq.h>
 
 #define CHECK_DELAY	(HZ >> 1)
 #define TRANS_LOAD_L	20
