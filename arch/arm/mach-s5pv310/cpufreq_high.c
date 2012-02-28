@@ -212,19 +212,19 @@ static unsigned int clkdiv_cpu0[CPUFREQ_LEVEL_END][7] = {
 	/* ARM L0: 1400MHz */
 	{ 0, 3, 7, 3, 4, 1, 7 },
 
-	/* ARM L0: 1200MHz */
+	/* ARM L1: 1200MHz */
 	{ 0, 3, 7, 3, 4, 1, 7 },
 
-	/* ARM L1: 1000MHz */
+	/* ARM L2: 1000MHz */
 	{ 0, 3, 7, 3, 4, 1, 7 },
 
-	/* ARM L2: 800MHz */
+	/* ARM L3: 800MHz */
 	{ 0, 3, 7, 3, 3, 1, 7 },
 
-	/* ARM L3: 500MHz */
+	/* ARM L4: 500MHz */
 	{ 0, 3, 7, 3, 3, 1, 7 },
 
-	/* ARM L4: 200MHz */
+	/* ARM L5: 200MHz */
 	{ 0, 1, 3, 1, 3, 1, 7 },
 };
 
@@ -235,19 +235,19 @@ static unsigned int clkdiv_cpu1[CPUFREQ_LEVEL_END][2] = {
 	/* ARM L0: 1400MHz */
 	{ 5, 0 },
 
-	/* ARM L0: 1200MHz */
+	/* ARM L1: 1200MHz */
 	{ 5, 0 },
 
-	/* ARM L1: 1000MHz */
+	/* ARM L2: 1000MHz */
 	{ 4, 0 },
 
-	/* ARM L1: 800MHz */
+	/* ARM L3: 800MHz */
 	{ 3, 0 },
 
-	/* ARM L2: 500MHz */
+	/* ARM L4: 500MHz */
 	{ 3, 0 },
 
-	/* ARM L3: 200MHz */
+	/* ARM L5: 200MHz */
 	{ 3, 0 },
 };
 
@@ -454,7 +454,7 @@ static struct cpufreq_voltage_table s5pv310_volt_table[CPUFREQ_LEVEL_END] = {
 		.int_volt	= 1000000,
 	}, {
 		.index		= L5,
-		.arm_volt	= 975000,
+		.arm_volt	= 950000,
 		.int_volt	= 1000000,
 	},
 };
@@ -492,19 +492,19 @@ static unsigned int s5pv310_apll_pms_table[CPUFREQ_LEVEL_END] = {
 	/* APLL FOUT L0: 1400MHz */
 	((350<<16)|(6<<8)|(0x1)),
 
-	/* APLL FOUT L0: 1200MHz */
+	/* APLL FOUT L1: 1200MHz */
 	((150<<16)|(3<<8)|(0x1)),
 
-	/* APLL FOUT L1: 1000MHz */
+	/* APLL FOUT L2: 1000MHz */
 	((250<<16)|(6<<8)|(0x1)),
 
-	/* APLL FOUT L2: 800MHz */
+	/* APLL FOUT L3: 800MHz */
 	((200<<16)|(6<<8)|(0x1)),
 
-	/* APLL FOUT L3: 500MHz */
+	/* APLL FOUT L4: 500MHz */
 	((250<<16)|(6<<8)|(0x2)),
 
-	/* APLL FOUT L4: 200MHz */
+	/* APLL FOUT L5: 200MHz */
 	((200<<16)|(6<<8)|(0x3)),
 };
 
@@ -867,8 +867,8 @@ static int s5pv310_target(struct cpufreq_policy *policy,
 
 #ifdef CONFIG_FREQ_STEP_UP_L2_L0
 	/* change L2 -> L0 */
-	if ((index == L0) && (old_index > L2))
-		index = L2;
+	if ((index == L0) && (old_index > L3))
+		index = L3;
 #else
 	/* change L3 -> L0 */
 	if ((index == L0) && (old_index > L3))

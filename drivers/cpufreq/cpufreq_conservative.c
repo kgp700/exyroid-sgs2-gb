@@ -29,8 +29,8 @@
  * It helps to keep variable names smaller, simpler
  */
 
-#define DEF_FREQUENCY_UP_THRESHOLD		(80)
-#define DEF_FREQUENCY_DOWN_THRESHOLD		(20)
+#define DEF_FREQUENCY_UP_THRESHOLD		(70)
+#define DEF_FREQUENCY_DOWN_THRESHOLD		(40)
 
 /*
  * The polling frequency of this governor depends on the capability of
@@ -95,7 +95,7 @@ static struct dbs_tuners {
 	.down_threshold = DEF_FREQUENCY_DOWN_THRESHOLD,
 	.sampling_down_factor = DEF_SAMPLING_DOWN_FACTOR,
 	.ignore_nice = 0,
-	.freq_step = 5,
+	.freq_step = 40,
 };
 
 static inline cputime64_t get_cpu_idle_time_jiffy(unsigned int cpu,
@@ -718,7 +718,7 @@ static int __init cpufreq_gov_dbs_init(void)
 {
 	int err;
 
-	kconservative_wq = create_workqueue("kconservative");
+	kconservative_wq = create_rt_workqueue("kconservative");
 	if (!kconservative_wq) {
 		printk(KERN_ERR "Creation of kconservative failed\n");
 		return -EFAULT;
