@@ -441,7 +441,7 @@ CONFIG_S5PV310_BUSFREQ=y
 #
 # CPUFreq step up sequence selection: 2 step or 3 step
 #
-CONFIG_FREQ_STEP_UP_L2_L0=y
+# CONFIG_FREQ_STEP_UP_L2_L0 is not set
 
 #
 # Processor Type
