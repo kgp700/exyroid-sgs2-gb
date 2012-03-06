@@ -441,7 +441,7 @@ CONFIG_S5PV310_BUSFREQ=y
 #
 # CPUFreq step up sequence selection: 2 step or 3 step
 #
-# CONFIG_FREQ_STEP_UP_L2_L0 is not set
+CONFIG_FREQ_STEP_UP_L2_L0=y
 
 #
 # Processor Type
@@ -600,7 +600,7 @@ CONFIG_CPU_IDLE_GOV_MENU=y
 # At least one emulation must be selected
 #
 # CONFIG_FPE_NWFPE is not set
-CONFIG_FPE_FASTFPE=y
+# CONFIG_FPE_FASTFPE is not set
 CONFIG_VFP=y
 CONFIG_VFPv3=y
 CONFIG_NEON=y

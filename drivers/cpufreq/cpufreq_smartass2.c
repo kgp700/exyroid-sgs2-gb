@@ -108,7 +108,7 @@ static unsigned int sleep_wakeup_freq;
 /*
  * Sampling rate, I highly recommend to leave it at 2.
  */
-#define DEFAULT_SAMPLE_RATE_JIFFIES 8
+#define DEFAULT_SAMPLE_RATE_JIFFIES 12
 static unsigned int sample_rate_jiffies;
 
 

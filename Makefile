@@ -336,8 +336,8 @@ MODFLAGS	= -DMODULE
 CFLAGS_MODULE   = $(MODFLAGS)
 AFLAGS_MODULE   = $(MODFLAGS)
 LDFLAGS_MODULE  = -T $(srctree)/scripts/module-common.lds
-CFLAGS_KERNEL	= -mtune=cortex-a9 -march=armv7-a -mfpu=neon -fsingle-precision-constant -ftree-vectorize -funswitch-loops -fforce-addr -fprofile-correction -falign-loops -fpredictive-commoning -fgcse-after-reload -pipe
-AFLAGS_KERNEL	= -mtune=cortex-a9 -march=armv7-a -mfpu=neon -fsingle-precision-constant -ftree-vectorize -funswitch-loops -fforce-addr -fprofile-correction -falign-loops -fpredictive-commoning -fgcse-after-reload -pipe
+CFLAGS_KERNEL	= -mtune=cortex-a9 -march=armv7-a -mfpu=neon -fsingle-precision-constant -ftree-vectorize -funswitch-loops -fprofile-correction -falign-loops -fpredictive-commoning -fgcse-after-reload -pipe
+AFLAGS_KERNEL	= -mtune=cortex-a9 -march=armv7-a -mfpu=neon -fsingle-precision-constant -ftree-vectorize -funswitch-loops -fprofile-correction -falign-loops -fpredictive-commoning -fgcse-after-reload -pipe
 CFLAGS_GCOV	= -fprofile-arcs -ftest-coverage
 
 
@@ -357,7 +357,7 @@ KBUILD_CFLAGS   := -Wall -Wundef -Wstrict-prototypes -Wno-trigraphs \
 		   -mtune=cortex-a9 -march=armv7-a -mfpu=neon -mfloat-abi=hard \
 		   -fsingle-precision-constant \
 		   -ftree-vectorize -funswitch-loops \
-		   -fprofile-correction -falign-loops -fforce-addr \
+		   -fprofile-correction -falign-loops \
 		   -fpredictive-commoning -fgcse-after-reload \
 		   -pipe -mthumb
 KBUILD_AFLAGS   := -D__ASSEMBLY__

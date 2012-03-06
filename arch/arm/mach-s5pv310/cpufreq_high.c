@@ -867,17 +867,12 @@ static int s5pv310_target(struct cpufreq_policy *policy,
 
 #ifdef CONFIG_FREQ_STEP_UP_L2_L0
 	/* change L2 -> L0 */
-	if ((index == L0) && (old_index > L3))
-		index = L3;
+	if ((index == L0) && (old_index > L2))
+		index = L2;
 #else
 	/* change L3 -> L2 and change L2 -> L0 */
-	if (index == L0) {
-		if (old_index > L2)
-			index = L2;
-
-		if (old_index > L3)
-			index = L3;
-	}
+	if ((index == L0) && (old_index > L3))
+		index = L3;
 #endif
 
 /* prevent freqs going above max policy - netarchy */

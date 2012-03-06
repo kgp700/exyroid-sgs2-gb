@@ -36,7 +36,7 @@
 #define DEF_FREQUENCY_DOWN_DIFFERENTIAL		(5)
 #define DEF_FREQUENCY_UP_THRESHOLD		(85)
 #define MICRO_FREQUENCY_DOWN_DIFFERENTIAL	(3)
-#define MICRO_FREQUENCY_UP_THRESHOLD		(88)
+#define MICRO_FREQUENCY_UP_THRESHOLD		(87)
 #define MICRO_FREQUENCY_MIN_SAMPLE_RATE		(10000)
 #define MIN_FREQUENCY_UP_THRESHOLD		(11)
 #define MAX_FREQUENCY_UP_THRESHOLD		(100)
@@ -919,7 +919,7 @@ static int __init cpufreq_gov_dbs_init(void)
 	} else {
 		/* For correct statistics, we need 10 ticks for each measure */
 		min_sampling_rate =
-			MIN_SAMPLING_RATE_RATIO * jiffies_to_usecs(12);
+			MIN_SAMPLING_RATE_RATIO * jiffies_to_usecs(10);
 	}
 
 	kondemand_wq = create_rt_workqueue("kondemand");
