@@ -30,8 +30,7 @@
 #include <linux/mutex.h>
 #include <linux/earlysuspend.h>
 
-#define dprintk(msg...) cpufreq_debug_printk(CPUFREQ_DEBUG_CORE, \
-						"cpufreq-core", msg)
+#define dprintk(msg...) //cpufreq_debug_printk(CPUFREQ_DEBUG_CORE, "cpufreq-core", msg)
 
 /**
  * The "cpufreq driver" - the arch- or hardware-dependent low
@@ -648,6 +647,102 @@ static ssize_t show_scaling_setspeed(struct cpufreq_policy *policy, char *buf)
 	return policy->governor->show_setspeed(policy, buf);
 }
 
+extern ssize_t acpuclk_get_vdd_levels_str(char *buf);
+
+static ssize_t show_vdd_levels(struct cpufreq_policy *policy, char *buf)
+{
+	return acpuclk_get_vdd_levels_str(buf);
+}
+
+extern void acpuclk_set_vdd(unsigned acpu_khz, int vdd);
+
+static ssize_t store_vdd_levels(struct cpufreq_policy *policy, const char *buf, size_t count)
+{
+	int i = 0, j;
+	int pair[2] = { 0, 0 };
+	int sign = 0;
+	
+	if (count < 1)
+		return 0;
+	if (buf[0] == '-')
+	{
+		sign = -1;
+		i++;
+	}
+	else if (buf[0] == '+')
+	{
+		sign = 1;
+		i++;
+	}
+
+	for (j = 0; i < count; i++)
+	{
+		char c = buf[i];
+		if ((c >= '0') && (c <= '9'))
+		{
+			pair[j] *= 10;
+			pair[j] += (c - '0');
+		}
+		else if ((c == ' ') || (c == '\t'))
+		{
+			if (pair[j] != 0)
+			{
+				j++;
+				if ((sign != 0) || (j > 1))
+					break;
+			}
+		}
+		else
+			break;
+	}
+	
+	if (sign != 0)
+	{
+		if (pair[0] > 0)
+			acpuclk_set_vdd(0, sign * pair[0]);
+	}
+	else
+	{
+		if ((pair[0] > 0) && (pair[1] > 0))
+			acpuclk_set_vdd((unsigned)pair[0], pair[1]);
+		else
+			return -EINVAL;
+	}
+	return count;
+}
+
+/* sysfs interface for UV control */
+extern ssize_t show_UV_mV_table(struct cpufreq_policy *policy, char *buf);
+extern ssize_t store_UV_mV_table(struct cpufreq_policy *policy,
+                                      const char *buf, size_t count);
+/* sysfs interface for frequency control */
+extern ssize_t show_freq_table(struct cpufreq_policy *policy, char *buf);
+extern ssize_t store_freq_table(struct cpufreq_policy *policy,
+                                      const char *buf, size_t count);
+/* sysfs interface for deepsleep entering cpu level */
+extern ssize_t show_deepsleep_cpulevel(struct cpufreq_policy *policy, char *buf);
+extern ssize_t store_deepsleep_cpulevel(struct cpufreq_policy *policy,
+                                      const char *buf, size_t count);
+/* sysfs interface for deepsleep entering bus level */
+extern ssize_t show_deepsleep_buslevel(struct cpufreq_policy *policy, char *buf);
+extern ssize_t store_deepsleep_buslevel(struct cpufreq_policy *policy,
+                                      const char *buf, size_t count);
+/* sysfs interface for bus frequency control */
+extern ssize_t show_busfreq_static(struct cpufreq_policy *policy, char *buf);
+extern ssize_t store_busfreq_static(struct cpufreq_policy *policy,
+                                      const char *buf, size_t count);
+extern ssize_t show_cpu_class(struct cpufreq_policy *policy, char *buf);
+/* sysfs interface for cpu smooth scaling parameters */
+extern ssize_t show_smooth_offset(struct cpufreq_policy *policy, char *buf);
+extern ssize_t store_smooth_offset(struct cpufreq_policy *policy,
+                                      const char *buf, size_t count);
+extern ssize_t show_smooth_target(struct cpufreq_policy *policy, char *buf);
+extern ssize_t store_smooth_target(struct cpufreq_policy *policy,
+                                      const char *buf, size_t count);
+extern ssize_t show_smooth_step(struct cpufreq_policy *policy, char *buf);
+extern ssize_t store_smooth_step(struct cpufreq_policy *policy,
+                                      const char *buf, size_t count);
+
 /**
  * show_scaling_driver - show the current cpufreq HW/BIOS limitation
  */
@@ -677,6 +772,23 @@ cpufreq_freq_attr_rw(scaling_min_freq);
 cpufreq_freq_attr_rw(scaling_max_freq);
 cpufreq_freq_attr_rw(scaling_governor);
 cpufreq_freq_attr_rw(scaling_setspeed);
+cpufreq_freq_attr_rw(vdd_levels);
+/* UV table */
+cpufreq_freq_attr_rw(UV_mV_table);
+/* freq table */
+cpufreq_freq_attr_rw(freq_table);
+/* busfreq_static_level */
+cpufreq_freq_attr_rw(busfreq_static);
+/* deepsleep cpu level */
+cpufreq_freq_attr_rw(deepsleep_cpulevel);
+/* deepsleep bus level */
+cpufreq_freq_attr_rw(deepsleep_buslevel);
+//smooth scaling params
+cpufreq_freq_attr_rw(smooth_offset);
+cpufreq_freq_attr_rw(smooth_target);
+cpufreq_freq_attr_rw(smooth_step);
+//cpu class
+cpufreq_freq_attr_ro(cpu_class);
 
 static struct attribute *default_attrs[] = {
 	&cpuinfo_min_freq.attr,
@@ -690,6 +802,16 @@ static struct attribute *default_attrs[] = {
 	&scaling_driver.attr,
 	&scaling_available_governors.attr,
 	&scaling_setspeed.attr,
+	&vdd_levels.attr,
+	&UV_mV_table.attr,
+	&freq_table.attr,
+	&busfreq_static.attr,
+	&deepsleep_cpulevel.attr,
+	&deepsleep_buslevel.attr,
+	&smooth_offset.attr,
+	&smooth_target.attr,
+	&smooth_step.attr,
+	&cpu_class.attr,
 	NULL
 };
 
@@ -1018,18 +1140,28 @@ static int cpufreq_add_dev(struct sys_device *sys_dev)
 
 	/* Set governor before ->init, so that driver could check it */
 #ifdef CONFIG_HOTPLUG_CPU
+	struct cpufreq_policy *cp;
 	for_each_online_cpu(sibling) {
-		struct cpufreq_policy *cp = per_cpu(cpufreq_cpu_data, sibling);
+		cp = per_cpu(cpufreq_cpu_data, sibling);
 		if (cp && cp->governor &&
 		    (cpumask_test_cpu(cpu, cp->related_cpus))) {
+			dprintk("found sibling CPU, copying policy\n");
 			policy->governor = cp->governor;
+			policy->min = cp->min;
+			policy->max = cp->max;
+			policy->user_policy.min = cp->user_policy.min;
+			policy->user_policy.max = cp->user_policy.max;
 			found = 1;
 			break;
 		}
 	}
 #endif
 	if (!found)
+	{
+		dprintk("failed to find sibling CPU, falling back to defaults\n");
 		policy->governor = CPUFREQ_DEFAULT_GOVERNOR;
+	}
+	
 	/* call driver. From then on the cpufreq must be able
 	 * to accept all calls to ->verify and ->setpolicy for this CPU
 	 */
@@ -1038,19 +1170,18 @@ static int cpufreq_add_dev(struct sys_device *sys_dev)
 		dprintk("initialization failed\n");
 		goto err_unlock_policy;
 	}
-#ifdef CONFIG_HOTPLUG_CPU
-	for_each_online_cpu(sibling) {
-		struct cpufreq_policy *cp = per_cpu(cpufreq_cpu_data, sibling);
-		if (cp && cp->governor &&
-		    (cpumask_test_cpu(cpu, cp->related_cpus))) {
-			policy->min = cp->min;
-			policy->max = cp->max;
-			break;
-		}
-	}
-#endif
 	policy->user_policy.min = policy->min;
 	policy->user_policy.max = policy->max;
+
+	if (found)
+	{
+		/* Calling the driver can overwrite policy frequencies again */
+		dprintk("Overriding policy max and min with sibling settings\n");
+		policy->min = cp->min;
+		policy->max = cp->max;
+		policy->user_policy.min = cp->user_policy.min;
+		policy->user_policy.max = cp->user_policy.max;
+	}
 
 	blocking_notifier_call_chain(&cpufreq_policy_notifier_list,
 				     CPUFREQ_START, policy);
@@ -1664,6 +1795,20 @@ int cpufreq_register_governor(struct cpufreq_governor *governor)
 	err = -EBUSY;
 	if (__find_governor(governor->name) == NULL) {
 		err = 0;
+		if (!strncmp(governor->name, "powersave", CPUFREQ_NAME_LEN)
+		|| !strncmp(governor->name, "performance", CPUFREQ_NAME_LEN)
+		)
+			governor->disableScalingDuringSuspend = 0;
+		else
+			governor->disableScalingDuringSuspend = 1;
+		if (!strncmp(governor->name, "powersave", CPUFREQ_NAME_LEN)
+		|| !strncmp(governor->name, "performance", CPUFREQ_NAME_LEN)
+		|| !strncmp(governor->name, "lulzactive", CPUFREQ_NAME_LEN)
+		|| !strncmp(governor->name, "interactive", 11)
+		)
+			governor->enableSmoothScaling = 0;
+		else
+			governor->enableSmoothScaling = 1;
 		list_add(&governor->governor_list, &cpufreq_governor_list);
 	}
 

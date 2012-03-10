@@ -24,6 +24,10 @@
 
 #define CPUFREQ_NAME_LEN 16
 
+/* CPU UV DEFINES */
+#define CPU_UV_MV_MAX 1400000
+#define CPU_UV_MV_MIN 750000
+
 
 /*********************************************************************
  *                     CPUFREQ NOTIFIER INTERFACE                    *
@@ -178,6 +182,8 @@ struct cpufreq_governor {
 			will fallback to performance governor */
 	struct list_head	governor_list;
 	struct module		*owner;
+	int disableScalingDuringSuspend;
+	int enableSmoothScaling;
 };
 
 /* pass a target to the cpufreq driver 
@@ -335,8 +341,13 @@ static inline unsigned int cpufreq_get(unsigned int cpu)
 /* query the last known CPU freq (in kHz). If zero, cpufreq couldn't detect it */
 #ifdef CONFIG_CPU_FREQ
 unsigned int cpufreq_quick_get(unsigned int cpu);
+unsigned int cpufreq_quick_get_max(unsigned int cpu);
 #else
 static inline unsigned int cpufreq_quick_get(unsigned int cpu)
+{
+	return 0;
+}
+static inline unsigned int cpufreq_quick_get_max(unsigned int cpu)
 {
 	return 0;
 }

@@ -876,11 +876,11 @@ static int s5pv310_target(struct cpufreq_policy *policy,
 #endif
 
 /* prevent freqs going above max policy - netarchy */
-	if (s5pv310_freq_table[index].frequency > policy->max) {
-		while (s5pv310_freq_table[index].frequency > policy-> max) {
+//	if (s5pv310_freq_table[index].frequency > policy->max) { //redundant - gm
+		while (s5pv310_freq_table[index].frequency > policy->max) {
 			index += 1;
 		}
-	}
+//	}
 
 	freqs.new = s5pv310_freq_table[index].frequency;
 	freqs.cpu = policy->cpu;
@@ -1400,7 +1400,7 @@ static int s5pv310_cpufreq_notifier_event(struct notifier_block *this,
 	switch (event) {
 	case PM_SUSPEND_PREPARE:
 		ret = cpufreq_driver_target(cpufreq_cpu_get(cpu),
-		s5pv310_freq_table[L4].frequency, DISABLE_FURTHER_CPUFREQ);
+		s5pv310_freq_table[L3].frequency, DISABLE_FURTHER_CPUFREQ);
 		if (WARN_ON(ret < 0))
 			return NOTIFY_BAD;
 #ifdef CONFIG_S5PV310_BUSFREQ
@@ -1412,7 +1412,7 @@ static int s5pv310_cpufreq_notifier_event(struct notifier_block *this,
 	case PM_POST_SUSPEND:
 		printk(KERN_DEBUG "PM_POST_SUSPEND for CPUFREQ: %d\n", ret);
 		ret = cpufreq_driver_target(cpufreq_cpu_get(cpu),
-		s5pv310_freq_table[L4].frequency, ENABLE_FURTHER_CPUFREQ);
+		s5pv310_freq_table[L3].frequency, ENABLE_FURTHER_CPUFREQ);
 #ifdef CONFIG_S5PV310_BUSFREQ
 		s5pv310_busfreq_lock_free(DVFS_LOCK_ID_PM);
 #endif
