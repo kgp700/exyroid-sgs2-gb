@@ -2775,7 +2775,7 @@ ssize_t set_freq_table(unsigned char step, unsigned int freq)
 	switch(step)
 	{
 		case 0: //1200
-			if(freq >= 1400 || freq <= 1000) return -EINVAL;
+			if(freq >= 1452 || freq <= 1000) return -EINVAL;
 			pll = (int)(freq / 8);
 			s5pv310_apll_pms_table[step] =	((pll<<16)|(3<<8)|(0x1));
 			s5pv310_freq_table[step].frequency = pll * 8 * 1000;	
