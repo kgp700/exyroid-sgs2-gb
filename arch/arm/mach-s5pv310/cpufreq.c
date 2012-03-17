@@ -50,9 +50,9 @@ int exp_UV_mV[6] = {
 	1275000, // 1200Mhz
 	1175000, // 1000Mhz
 	1075000, // 800Mhz
-	975000,  // 500Mhz
-	950000,  // 200Mhz
-	925000,  // 100Mhz
+	1000000,  // 500Mhz
+	975000,  // 200Mhz
+	950000,  // 100Mhz
 };
 
 static struct clk *arm_clk;
@@ -86,7 +86,7 @@ void __iomem *dac_base;
 #define SET_CPU_FREQ_SAMPLING_RATE      100000
 
 #define printk(args...)
-#define SMOOTH_SCALING
+//#define SMOOTH_SCALING
 #define ARIGHI_SMOOTH_SCALING
 
 #define ARMCLOCK_1200MHZ		1200000
@@ -679,15 +679,15 @@ static struct cpufreq_voltage_table s5pv310_volt_table[CPUFREQ_LEVEL_END] = {
 		.int_volt	= 1100000,
 	}, {
 		.index		= L3,
-		.arm_volt	= 975000,
+		.arm_volt	= 1000000,
 		.int_volt	= 1000000,
 	}, {
 		.index		= L4,
-		.arm_volt	= 950000,
+		.arm_volt	= 975000,
 		.int_volt	= 1000000,
 	}, {
 		.index		= L5,
-		.arm_volt	= 925000,
+		.arm_volt	= 950000,
 		.int_volt	= 1000000,
 	},
 };
@@ -1089,9 +1089,9 @@ static void do_smooth_freq(struct work_struct *work)
 static DECLARE_DELAYED_WORK(smooth_freq_work, do_smooth_freq);
 #endif
 
-int smooth_target = L2;
+int smooth_target = L0;
 int smooth_offset = 2;
-int smooth_step = 2;
+int smooth_step = 1;
 
 static int s5pv310_target(struct cpufreq_policy *policy,
 		unsigned int target_freq,
@@ -1165,8 +1165,8 @@ static int s5pv310_target(struct cpufreq_policy *policy,
 #ifdef SMOOTH_SCALING
 #ifdef CONFIG_FREQ_STEP_UP_L2_L0
 		/* change L2 -> L0 */
-		if ((index <= L2) && (old_index > L4))
-			index = L4;
+		if ((index <= L0) && (old_index > L2))
+			index = L2;
 #else
 		/* change L2 -> L1 and change L1 -> L0 */
 		if (index <= L2) {
@@ -1377,7 +1377,7 @@ static int busload_observor(struct busfreq_table *freq_table,
 		goto observerout;
 	}
 	
-	if ((freqs.new >= s5pv310_freq_table[L2].frequency)) {
+	if ((freqs.new >= s5pv310_freq_table[L0].frequency)) {
 		*index = LV_0;
 		return 0;
 	}
@@ -1775,7 +1775,7 @@ static int s5pv310_cpufreq_reboot_notifier_call(struct notifier_block *this,
 	int ret = 0;
 
 	ret = cpufreq_driver_target(cpufreq_cpu_get(cpu),
-		s5pv310_freq_table[L2].frequency, DISABLE_FURTHER_CPUFREQ);
+		s5pv310_freq_table[L0].frequency, DISABLE_FURTHER_CPUFREQ);
 	if (WARN_ON(ret < 0))
 		return NOTIFY_BAD;
 #ifdef CONFIG_S5PV310_BUSFREQ
